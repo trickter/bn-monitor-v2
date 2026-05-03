@@ -1,6 +1,13 @@
 # Alert Rules
 
-当前版本只实现 `daily_flat_oi_buildup` 纯规则函数。
+Current implemented pure rule functions:
+
+- `daily_flat_oi_buildup`
+- `breakout_watch`
+
+See `docs/breakout-watch.md` for the focused `breakout_watch` trigger contract.
+
+当前版本实现 `daily_flat_oi_buildup` 和 `breakout_watch` 纯规则函数。
 
 ## daily_flat_oi_buildup
 
