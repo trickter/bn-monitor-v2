@@ -30,6 +30,24 @@ def snapshot(
     )
 
 
+def breakdown_snapshot() -> IndicatorContext:
+    return IndicatorContext(
+        ts=datetime(2026, 5, 3, 1, 2, tzinfo=UTC),
+        symbol="SOLUSDT",
+        return_24h=None,
+        oi_change_24h=None,
+        baseline_ready=True,
+        is_altcoin=True,
+        distance_to_low_1h_bps=Decimal("45"),
+        distance_to_low_24h_bps=Decimal("90"),
+        range_compression_15m=Decimal("0.60"),
+        oi_change_15m=Decimal("0.02"),
+        volume_robust_z_5m=Decimal("3.5"),
+        taker_sell_ratio_5m=Decimal("0.65"),
+        market_relative_return_5m=Decimal("-0.01"),
+    )
+
+
 def test_engine_generates_suppressed_alert_values_in_shadow_mode(tmp_path: Path) -> None:
     engine = AlertEngine(settings_from_text(tmp_path, "ALERT_MODE=shadow\n"))
 
@@ -73,4 +91,17 @@ def test_engine_returns_empty_list_when_rule_does_not_trigger(tmp_path: Path) ->
     values = engine.evaluate([snapshot(oi_change_24h=Decimal("0.01"))])
 
     assert values == []
+
+
+def test_engine_generates_breakdown_watch_values(tmp_path: Path) -> None:
+    engine = AlertEngine(settings_from_text(tmp_path, "ALERT_MODE=live\n"))
+
+    values = engine.evaluate([breakdown_snapshot()])
+
+    assert len(values) == 1
+    assert values[0]["alert_type"] == "breakdown_watch"
+    assert values[0]["severity"] == "WARNING"
+    assert values[0]["direction"] == "down"
+    assert values[0]["payload"]["signal_window"] == "15m"
+    assert values[0]["delivery_status"] == "pending"
 
