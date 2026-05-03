@@ -15,6 +15,10 @@ BREAKOUT_RANGE_COMPRESSION_MAX = Decimal("0.70")
 BREAKOUT_VOLUME_ROBUST_Z_MIN = Decimal("3.0")
 BREAKOUT_TAKER_BUY_RATIO_MIN = Decimal("0.60")
 BREAKOUT_MARKET_RELATIVE_RETURN_MIN = Decimal("0")
+BREAKDOWN_LOW_DISTANCE_BPS = Decimal("50")
+BREAKDOWN_RANGE_COMPRESSION_MAX = Decimal("0.70")
+BREAKDOWN_VOLUME_ROBUST_Z_MIN = Decimal("3.0")
+BREAKDOWN_TAKER_SELL_RATIO_MIN = Decimal("0.60")
 
 
 @dataclass(frozen=True)
@@ -29,9 +33,12 @@ class IndicatorContext:
     oi_change_15m: Decimal | None = None
     distance_to_high_1h_bps: Decimal | None = None
     distance_to_high_24h_bps: Decimal | None = None
+    distance_to_low_1h_bps: Decimal | None = None
+    distance_to_low_24h_bps: Decimal | None = None
     range_compression_15m: Decimal | None = None
     volume_robust_z_5m: Decimal | None = None
     taker_buy_ratio_5m: Decimal | None = None
+    taker_sell_ratio_5m: Decimal | None = None
     market_relative_return_5m: Decimal | None = None
 
 
@@ -272,6 +279,132 @@ def evaluate_breakout_watch(snapshot: IndicatorContext) -> AlertDecision | None:
         message=(
             f"{symbol} is near a recent high with compressed 15m range, "
             "positive OI change, strong 5m volume, and taker buy pressure."
+        ),
+        payload=payload,
+    )
+
+
+def evaluate_breakdown_watch(snapshot: IndicatorContext) -> AlertDecision | None:
+    if not snapshot.baseline_ready:
+        return None
+    if not snapshot.is_altcoin:
+        return None
+
+    near_1h_low = (
+        snapshot.distance_to_low_1h_bps is not None
+        and snapshot.distance_to_low_1h_bps <= BREAKDOWN_LOW_DISTANCE_BPS
+    )
+    near_24h_low = (
+        snapshot.distance_to_low_24h_bps is not None
+        and snapshot.distance_to_low_24h_bps <= BREAKDOWN_LOW_DISTANCE_BPS
+    )
+    if not (near_1h_low or near_24h_low):
+        return None
+    if (
+        snapshot.range_compression_15m is None
+        or snapshot.oi_change_15m is None
+        or snapshot.volume_robust_z_5m is None
+        or snapshot.taker_sell_ratio_5m is None
+        or snapshot.market_relative_return_5m is None
+    ):
+        return None
+    if snapshot.range_compression_15m > BREAKDOWN_RANGE_COMPRESSION_MAX:
+        return None
+    if snapshot.oi_change_15m <= 0:
+        return None
+    if snapshot.volume_robust_z_5m < BREAKDOWN_VOLUME_ROBUST_Z_MIN:
+        return None
+    if snapshot.taker_sell_ratio_5m < BREAKDOWN_TAKER_SELL_RATIO_MIN:
+        return None
+    if snapshot.market_relative_return_5m > 0:
+        return None
+
+    score = min(
+        Decimal("100"),
+        Decimal("70")
+        + snapshot.volume_robust_z_5m * Decimal("3")
+        + snapshot.taker_sell_ratio_5m * Decimal("10")
+        + abs(snapshot.market_relative_return_5m) * Decimal("100"),
+    )
+    symbol = snapshot.symbol.upper()
+    low_confirmations = []
+    if near_1h_low:
+        low_confirmations.append("distance_to_low_1h_bps")
+    if near_24h_low:
+        low_confirmations.append("distance_to_low_24h_bps")
+
+    payload = {
+        "symbol": symbol,
+        "signal_window": "15m",
+        "confirmation_window": "1h",
+        "confirmations": [
+            *low_confirmations,
+            "range_compression_15m",
+            "oi_change_15m",
+            "volume_robust_z_5m",
+            "taker_sell_ratio_5m",
+            "market_relative_return_5m",
+        ],
+        "trigger_conditions": [
+            {
+                "field": "distance_to_low_1h_bps|distance_to_low_24h_bps",
+                "operator": "<=",
+                "threshold": str(BREAKDOWN_LOW_DISTANCE_BPS),
+                "distance_to_low_1h_bps": (
+                    None
+                    if snapshot.distance_to_low_1h_bps is None
+                    else str(snapshot.distance_to_low_1h_bps)
+                ),
+                "distance_to_low_24h_bps": (
+                    None
+                    if snapshot.distance_to_low_24h_bps is None
+                    else str(snapshot.distance_to_low_24h_bps)
+                ),
+            },
+            {
+                "field": "range_compression_15m",
+                "operator": "<=",
+                "value": str(snapshot.range_compression_15m),
+                "threshold": str(BREAKDOWN_RANGE_COMPRESSION_MAX),
+            },
+            {
+                "field": "oi_change_15m",
+                "operator": ">",
+                "value": str(snapshot.oi_change_15m),
+                "threshold": "0",
+            },
+            {
+                "field": "volume_robust_z_5m",
+                "operator": ">=",
+                "value": str(snapshot.volume_robust_z_5m),
+                "threshold": str(BREAKDOWN_VOLUME_ROBUST_Z_MIN),
+            },
+            {
+                "field": "taker_sell_ratio_5m",
+                "operator": ">=",
+                "value": str(snapshot.taker_sell_ratio_5m),
+                "threshold": str(BREAKDOWN_TAKER_SELL_RATIO_MIN),
+            },
+            {
+                "field": "market_relative_return_5m",
+                "operator": "<=",
+                "value": str(snapshot.market_relative_return_5m),
+                "threshold": "0",
+            },
+        ],
+    }
+
+    return AlertDecision(
+        ts=snapshot.ts,
+        symbol=symbol,
+        alert_type="breakdown_watch",
+        severity="WARNING",
+        direction="down",
+        score=score,
+        title=f"{symbol} breakdown watch",
+        message=(
+            f"{symbol} is near recent lows with 15m compression, rising OI, "
+            "5m sell pressure, and weak market-relative return."
         ),
         payload=payload,
     )

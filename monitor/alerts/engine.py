@@ -8,6 +8,7 @@ from monitor.alerts.delivery import evaluate_discord_delivery
 from monitor.alerts.rules import (
     AlertDecision,
     IndicatorContext,
+    evaluate_breakdown_watch,
     evaluate_breakout_watch,
     evaluate_daily_flat_oi_buildup,
     evaluate_flat_oi_buildup_15m,
@@ -19,6 +20,7 @@ RULE_EVALUATORS = (
     evaluate_flat_oi_buildup_15m,
     evaluate_daily_flat_oi_buildup,
     evaluate_breakout_watch,
+    evaluate_breakdown_watch,
 )
 
 

@@ -5,8 +5,9 @@
 - `flat_oi_buildup_15m`
 - `daily_flat_oi_buildup`
 - `breakout_watch`
+- `breakdown_watch`
 
-这些规则只生成观察信号，不给自动交易建议。`breakout_watch` 是临界观察，不表示已经确认突破。
+这些规则只生成观察信号，不给自动交易建议。`breakout_watch` / `breakdown_watch` 是临界观察，不表示已经确认突破或跌破。
 
 ## flat_oi_buildup_15m
 
@@ -72,6 +73,31 @@ AND is_altcoin == true
 - `alert_type=breakout_watch`
 - `severity=WARNING`
 - `direction=up`
+- `signal_window=15m`
+- `confirmation_window=1h`
+
+## breakdown_watch
+
+用途：识别接近近期下沿、可能向下跌破的临界观察币。
+
+触发条件：
+
+```text
+distance_to_low_1h_bps <= 50 OR distance_to_low_24h_bps <= 50
+AND range_compression_15m <= 0.70
+AND oi_change_15m > 0
+AND volume_robust_z_5m >= 3.0
+AND taker_sell_ratio_5m >= 0.60
+AND market_relative_return_5m <= 0
+AND baseline_ready == true
+AND is_altcoin == true
+```
+
+输出：
+
+- `alert_type=breakdown_watch`
+- `severity=WARNING`
+- `direction=down`
 - `signal_window=15m`
 - `confirmation_window=1h`
 
