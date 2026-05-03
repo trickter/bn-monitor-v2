@@ -330,7 +330,7 @@ def test_custom_threshold_changes_flat_oi_15m_trigger() -> None:
     # Raise the limit to 0.01: same input now triggers.
     decision = evaluate_flat_oi_buildup_15m(
         snapshot(return_15m=Decimal("0.006"), oi_change_15m=Decimal("0.04")),
-        thresholds={"FLAT_15M_RETURN_LIMIT": Decimal("0.01")},
+        thresholds={"return_limit": Decimal("0.01")},
     )
     assert decision is not None
     assert decision.alert_type == "flat_oi_buildup_15m"
@@ -342,7 +342,7 @@ def test_custom_threshold_changes_daily_flat_oi_trigger() -> None:
     # Lower the threshold to 0.08: same input now triggers.
     decision = evaluate_daily_flat_oi_buildup(
         snapshot(oi_change_24h=Decimal("0.09")),
-        thresholds={"DAILY_OI_BUILDUP_THRESHOLD": Decimal("0.08")},
+        thresholds={"oi_buildup_threshold": Decimal("0.08")},
     )
     assert decision is not None
     assert decision.alert_type == "daily_flat_oi_buildup"

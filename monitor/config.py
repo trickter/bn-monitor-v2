@@ -25,21 +25,12 @@ class UniverseMode(StrEnum):
     EXPLICIT = "explicit"
 
 
-KNOWN_RULE_THRESHOLD_KEYS = frozenset({
-    "DAILY_FLAT_RETURN_LIMIT",
-    "DAILY_OI_BUILDUP_THRESHOLD",
-    "FLAT_15M_RETURN_LIMIT",
-    "OI_BUILDUP_15M_THRESHOLD",
-    "BREAKOUT_NEAR_HIGH_BPS",
-    "BREAKOUT_RANGE_COMPRESSION_MAX",
-    "BREAKOUT_VOLUME_ROBUST_Z_MIN",
-    "BREAKOUT_TAKER_BUY_RATIO_MIN",
-    "BREAKOUT_MARKET_RELATIVE_RETURN_MIN",
-    "BREAKDOWN_LOW_DISTANCE_BPS",
-    "BREAKDOWN_RANGE_COMPRESSION_MAX",
-    "BREAKDOWN_VOLUME_ROBUST_Z_MIN",
-    "BREAKDOWN_TAKER_SELL_RATIO_MIN",
-})
+KNOWN_RULE_THRESHOLDS: dict[str, frozenset[str]] = {
+    "flat_oi_buildup_15m": frozenset({"return_limit", "oi_buildup_threshold"}),
+    "daily_flat_oi_buildup": frozenset({"return_limit", "oi_buildup_threshold"}),
+    "breakout_watch": frozenset({"near_high_bps", "range_compression_max", "volume_z_min", "taker_buy_min", "market_return_min"}),
+    "breakdown_watch": frozenset({"low_distance_bps", "range_compression_max", "volume_z_min", "taker_sell_min"}),
+}
 
 KNOWN_ALERT_TYPES = frozenset(
     {
@@ -143,14 +134,19 @@ class Settings(BaseSettings):
                 raise ValueError(f"RULE_THRESHOLDS is not valid JSON: {exc}") from exc
             if not isinstance(parsed, dict):
                 raise ValueError("RULE_THRESHOLDS must be a JSON object")
-            unknown_keys = sorted(k for k in parsed if k not in KNOWN_RULE_THRESHOLD_KEYS)
-            if unknown_keys:
-                raise ValueError(f"unknown key in RULE_THRESHOLDS: {', '.join(unknown_keys)}")
-            for k, v in parsed.items():
-                try:
-                    Decimal(str(v))
-                except InvalidOperation:
-                    raise ValueError(f"RULE_THRESHOLDS[{k!r}] cannot be converted to Decimal: {v!r}")
+            for alert_type, rule_cfg in parsed.items():
+                if alert_type not in KNOWN_RULE_THRESHOLDS:
+                    raise ValueError(f"unknown alert_type in RULE_THRESHOLDS: {alert_type!r}")
+                if not isinstance(rule_cfg, dict):
+                    raise ValueError(f"RULE_THRESHOLDS[{alert_type!r}] must be a JSON object")
+                unknown_keys = sorted(k for k in rule_cfg if k not in KNOWN_RULE_THRESHOLDS[alert_type])
+                if unknown_keys:
+                    raise ValueError(f"unknown key in RULE_THRESHOLDS[{alert_type!r}]: {', '.join(unknown_keys)}")
+                for k, v in rule_cfg.items():
+                    try:
+                        Decimal(str(v))
+                    except InvalidOperation:
+                        raise ValueError(f"RULE_THRESHOLDS[{alert_type!r}][{k!r}] cannot be converted to Decimal: {v!r}")
 
         return self
 
@@ -166,11 +162,14 @@ class Settings(BaseSettings):
         return tuple(symbols)
 
     @property
-    def rule_thresholds(self) -> dict[str, Decimal]:
+    def rule_thresholds(self) -> dict[str, dict[str, Decimal]]:
         raw = self.rule_thresholds_raw.strip()
         if not raw or raw == "{}":
             return {}
-        return {k: Decimal(str(v)) for k, v in json.loads(raw).items()}
+        return {
+            alert_type: {k: Decimal(str(v)) for k, v in rule_cfg.items()}
+            for alert_type, rule_cfg in json.loads(raw).items()
+        }
 
     @property
     def discord_alert_type_allowlist(self) -> tuple[str, ...]:

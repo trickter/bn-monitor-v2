@@ -20,7 +20,7 @@
 | `VOLUME_PERCENTILE_THRESHOLD` | `0.95` | `0` 到 `1` | 后续成交量分位阈值。 |
 | `VOLUME_ROBUST_Z_THRESHOLD` | `3.0` | 正数 | 后续成交量 robust z 阈值。 |
 | `ALERT_COOLDOWN_MINUTES` | `10` | 正整数 | 默认告警冷却分钟数。 |
-| `RULE_THRESHOLDS` | `{}` | JSON object | 覆盖规则默认阈值；key 必须为已知阈值名，value 为可解析为 Decimal 的字符串或数字；未配置或 `{}` 时使用内置默认值。 |
+| `RULE_THRESHOLDS` | `{}` | JSON object | 按 alert_type 分组覆盖规则阈值；格式为 `{"alert_type": {"key": "value"}}`；未配置或 `{}` 时使用内置默认值。 |
 
 ## Discord 投递资格
 
@@ -61,19 +61,22 @@ symbol_alert_bundle
 
 `DISCORD_ALERT_TYPE_ALLOWLIST` 中出现未知 `alert_type` 时必须启动失败。
 
-## RULE_THRESHOLDS 可用 key
+## RULE_THRESHOLDS 格式与可用 key
 
-```text
-DAILY_FLAT_RETURN_LIMIT        DAILY_OI_BUILDUP_THRESHOLD
-FLAT_15M_RETURN_LIMIT          OI_BUILDUP_15M_THRESHOLD
-BREAKOUT_NEAR_HIGH_BPS         BREAKOUT_RANGE_COMPRESSION_MAX
-BREAKOUT_VOLUME_ROBUST_Z_MIN   BREAKOUT_TAKER_BUY_RATIO_MIN
-BREAKOUT_MARKET_RELATIVE_RETURN_MIN
-BREAKDOWN_LOW_DISTANCE_BPS     BREAKDOWN_RANGE_COMPRESSION_MAX
-BREAKDOWN_VOLUME_ROBUST_Z_MIN  BREAKDOWN_TAKER_SELL_RATIO_MIN
+格式：两层 JSON object，顶层为 alert_type，二层为该规则的阈值 key。
+
+```
+RULE_THRESHOLDS={"breakout_watch": {"near_high_bps": "40"}, "flat_oi_buildup_15m": {"return_limit": "0.008"}}
 ```
 
-出现未知 key 或无法解析为 Decimal 的 value 时必须启动失败。
+| alert_type | 可用 key |
+|---|---|
+| `flat_oi_buildup_15m` | `return_limit`, `oi_buildup_threshold` |
+| `daily_flat_oi_buildup` | `return_limit`, `oi_buildup_threshold` |
+| `breakout_watch` | `near_high_bps`, `range_compression_max`, `volume_z_min`, `taker_buy_min`, `market_return_min` |
+| `breakdown_watch` | `low_distance_bps`, `range_compression_max`, `volume_z_min`, `taker_sell_min` |
+
+顶层未知 alert_type、二层未知 key、非法 JSON 或无法解析为 Decimal 的 value，均导致启动失败。
 
 ## 验收
 

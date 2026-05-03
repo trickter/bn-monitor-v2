@@ -38,9 +38,10 @@ class AlertEngine:
 
     def evaluate(self, snapshots: Iterable[IndicatorContext]) -> list[dict[str, Any]]:
         alert_values = []
+        thresholds_by_type = self.settings.rule_thresholds
         for snapshot in snapshots:
-            for evaluator in RULE_REGISTRY:
-                decision = evaluator(snapshot, self.settings.rule_thresholds)
+            for alert_type, evaluator in RULE_REGISTRY:
+                decision = evaluator(snapshot, thresholds_by_type.get(alert_type))
                 if decision is None:
                     continue
                 alert_values.append(alert_decision_to_values(self.settings, decision))
