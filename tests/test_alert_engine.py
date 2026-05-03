@@ -19,6 +19,8 @@ def snapshot(
     *,
     return_24h: Decimal = Decimal("0.01"),
     oi_change_24h: Decimal = Decimal("0.12"),
+    return_15m: Decimal | None = None,
+    oi_change_15m: Decimal | None = None,
 ) -> IndicatorContext:
     return IndicatorContext(
         ts=datetime(2026, 5, 3, 1, 2, tzinfo=UTC),
@@ -27,6 +29,8 @@ def snapshot(
         oi_change_24h=oi_change_24h,
         baseline_ready=True,
         is_altcoin=True,
+        return_15m=return_15m,
+        oi_change_15m=oi_change_15m,
     )
 
 
@@ -73,4 +77,25 @@ def test_engine_returns_empty_list_when_rule_does_not_trigger(tmp_path: Path) ->
     values = engine.evaluate([snapshot(oi_change_24h=Decimal("0.01"))])
 
     assert values == []
+
+
+def test_engine_generates_flat_oi_buildup_15m_alert_values(tmp_path: Path) -> None:
+    engine = AlertEngine(settings_from_text(tmp_path, "ALERT_MODE=live\n"))
+
+    values = engine.evaluate(
+        [
+            snapshot(
+                return_24h=Decimal("0.10"),
+                oi_change_24h=Decimal("0.01"),
+                return_15m=Decimal("0.002"),
+                oi_change_15m=Decimal("0.04"),
+            )
+        ]
+    )
+
+    assert len(values) == 1
+    assert values[0]["alert_type"] == "flat_oi_buildup_15m"
+    assert values[0]["severity"] == "WARNING"
+    assert values[0]["direction"] == "none"
+    assert values[0]["payload"]["signal_window"] == "15m"
 
