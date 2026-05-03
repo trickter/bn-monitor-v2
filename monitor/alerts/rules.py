@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from decimal import Decimal
+from typing import Any
 
 from monitor.indicators import AlertDecision, IndicatorContext
 
@@ -20,33 +21,39 @@ BREAKDOWN_RANGE_COMPRESSION_MAX = Decimal("0.70")
 BREAKDOWN_VOLUME_ROBUST_Z_MIN = Decimal("3.0")
 BREAKDOWN_TAKER_SELL_RATIO_MIN = Decimal("0.60")
 
-RULE_REGISTRY: list[Callable[[IndicatorContext], AlertDecision | None]] = []
+RuleEvaluator = Callable[[IndicatorContext, dict[str, Decimal] | None], AlertDecision | None]
+RULE_REGISTRY: list[RuleEvaluator] = []
 
 
-def register_rule(fn: Callable[[IndicatorContext], AlertDecision | None]) -> Callable[[IndicatorContext], AlertDecision | None]:
+def register_rule(fn: RuleEvaluator) -> RuleEvaluator:
     RULE_REGISTRY.append(fn)
     return fn
 
 
-def _threshold_cond(field: str, op: str, value: Decimal, threshold: Decimal) -> dict:
+def _threshold_cond(field: str, op: str, value: Decimal, threshold: Decimal) -> dict[str, Any]:
     return {"field": field, "operator": op, "value": str(value), "threshold": str(threshold)}
 
 
-def _between_cond(field: str, value: Decimal, min_val: Decimal, max_val: Decimal) -> dict:
+def _between_cond(field: str, value: Decimal, min_val: Decimal, max_val: Decimal) -> dict[str, Any]:
     return {"field": field, "operator": "between", "value": str(value), "min": str(min_val), "max": str(max_val)}
 
 
 @register_rule
-def evaluate_flat_oi_buildup_15m(snapshot: IndicatorContext) -> AlertDecision | None:
+def evaluate_flat_oi_buildup_15m(snapshot: IndicatorContext, thresholds: dict[str, Decimal] | None = None) -> AlertDecision | None:
     if not snapshot.baseline_ready:
         return None
     if not snapshot.is_altcoin:
         return None
     if snapshot.return_15m is None or snapshot.oi_change_15m is None:
         return None
-    if abs(snapshot.return_15m) > FLAT_15M_RETURN_LIMIT:
+
+    t = thresholds or {}
+    flat_return_limit = t.get("FLAT_15M_RETURN_LIMIT", FLAT_15M_RETURN_LIMIT)
+    oi_buildup_threshold = t.get("OI_BUILDUP_15M_THRESHOLD", OI_BUILDUP_15M_THRESHOLD)
+
+    if abs(snapshot.return_15m) > flat_return_limit:
         return None
-    if snapshot.oi_change_15m < OI_BUILDUP_15M_THRESHOLD:
+    if snapshot.oi_change_15m < oi_buildup_threshold:
         return None
 
     score = min(Decimal("100"), Decimal("60") + snapshot.oi_change_15m * Decimal("100"))
@@ -57,8 +64,8 @@ def evaluate_flat_oi_buildup_15m(snapshot: IndicatorContext) -> AlertDecision | 
         "confirmation_window": "15m",
         "confirmations": ["oi_change_15m"],
         "trigger_conditions": [
-            _between_cond("return_15m", snapshot.return_15m, -FLAT_15M_RETURN_LIMIT, FLAT_15M_RETURN_LIMIT),
-            _threshold_cond("oi_change_15m", ">=", snapshot.oi_change_15m, OI_BUILDUP_15M_THRESHOLD),
+            _between_cond("return_15m", snapshot.return_15m, -flat_return_limit, flat_return_limit),
+            _threshold_cond("oi_change_15m", ">=", snapshot.oi_change_15m, oi_buildup_threshold),
         ],
     }
 
@@ -79,16 +86,21 @@ def evaluate_flat_oi_buildup_15m(snapshot: IndicatorContext) -> AlertDecision | 
 
 
 @register_rule
-def evaluate_daily_flat_oi_buildup(snapshot: IndicatorContext) -> AlertDecision | None:
+def evaluate_daily_flat_oi_buildup(snapshot: IndicatorContext, thresholds: dict[str, Decimal] | None = None) -> AlertDecision | None:
     if not snapshot.baseline_ready:
         return None
     if not snapshot.is_altcoin:
         return None
     if snapshot.return_24h is None or snapshot.oi_change_24h is None:
         return None
-    if abs(snapshot.return_24h) > DAILY_FLAT_RETURN_LIMIT:
+
+    t = thresholds or {}
+    flat_return_limit = t.get("DAILY_FLAT_RETURN_LIMIT", DAILY_FLAT_RETURN_LIMIT)
+    oi_buildup_threshold = t.get("DAILY_OI_BUILDUP_THRESHOLD", DAILY_OI_BUILDUP_THRESHOLD)
+
+    if abs(snapshot.return_24h) > flat_return_limit:
         return None
-    if snapshot.oi_change_24h < DAILY_OI_BUILDUP_THRESHOLD:
+    if snapshot.oi_change_24h < oi_buildup_threshold:
         return None
 
     score = min(Decimal("100"), Decimal("60") + snapshot.oi_change_24h * Decimal("100"))
@@ -99,8 +111,8 @@ def evaluate_daily_flat_oi_buildup(snapshot: IndicatorContext) -> AlertDecision 
         "confirmation_window": "24h",
         "confirmations": ["oi_change_24h"],
         "trigger_conditions": [
-            _between_cond("return_24h", snapshot.return_24h, -DAILY_FLAT_RETURN_LIMIT, DAILY_FLAT_RETURN_LIMIT),
-            _threshold_cond("oi_change_24h", ">=", snapshot.oi_change_24h, DAILY_OI_BUILDUP_THRESHOLD),
+            _between_cond("return_24h", snapshot.return_24h, -flat_return_limit, flat_return_limit),
+            _threshold_cond("oi_change_24h", ">=", snapshot.oi_change_24h, oi_buildup_threshold),
         ],
     }
 
@@ -121,7 +133,7 @@ def evaluate_daily_flat_oi_buildup(snapshot: IndicatorContext) -> AlertDecision 
 
 
 @register_rule
-def evaluate_breakout_watch(snapshot: IndicatorContext) -> AlertDecision | None:
+def evaluate_breakout_watch(snapshot: IndicatorContext, thresholds: dict[str, Decimal] | None = None) -> AlertDecision | None:
     if not snapshot.baseline_ready:
         return None
     if not snapshot.is_altcoin:
@@ -135,33 +147,32 @@ def evaluate_breakout_watch(snapshot: IndicatorContext) -> AlertDecision | None:
     ):
         return None
 
-    near_1h_high = (
-        snapshot.distance_to_high_1h_bps is not None
-        and snapshot.distance_to_high_1h_bps <= BREAKOUT_NEAR_HIGH_BPS
-    )
-    near_24h_high = (
-        snapshot.distance_to_high_24h_bps is not None
-        and snapshot.distance_to_high_24h_bps <= BREAKOUT_NEAR_HIGH_BPS
-    )
+    t = thresholds or {}
+    near_high_bps = t.get("BREAKOUT_NEAR_HIGH_BPS", BREAKOUT_NEAR_HIGH_BPS)
+    range_compression_max = t.get("BREAKOUT_RANGE_COMPRESSION_MAX", BREAKOUT_RANGE_COMPRESSION_MAX)
+    volume_z_min = t.get("BREAKOUT_VOLUME_ROBUST_Z_MIN", BREAKOUT_VOLUME_ROBUST_Z_MIN)
+    taker_buy_min = t.get("BREAKOUT_TAKER_BUY_RATIO_MIN", BREAKOUT_TAKER_BUY_RATIO_MIN)
+    market_return_min = t.get("BREAKOUT_MARKET_RELATIVE_RETURN_MIN", BREAKOUT_MARKET_RELATIVE_RETURN_MIN)
+
+    near_1h_high = snapshot.distance_to_high_1h_bps is not None and snapshot.distance_to_high_1h_bps <= near_high_bps
+    near_24h_high = snapshot.distance_to_high_24h_bps is not None and snapshot.distance_to_high_24h_bps <= near_high_bps
     if not (near_1h_high or near_24h_high):
         return None
-    if snapshot.range_compression_15m > BREAKOUT_RANGE_COMPRESSION_MAX:
+    if snapshot.range_compression_15m > range_compression_max:
         return None
     if snapshot.oi_change_15m <= 0:
         return None
-    if snapshot.volume_robust_z_5m < BREAKOUT_VOLUME_ROBUST_Z_MIN:
+    if snapshot.volume_robust_z_5m < volume_z_min:
         return None
-    if snapshot.taker_buy_ratio_5m < BREAKOUT_TAKER_BUY_RATIO_MIN:
+    if snapshot.taker_buy_ratio_5m < taker_buy_min:
         return None
-    if snapshot.market_relative_return_5m < BREAKOUT_MARKET_RELATIVE_RETURN_MIN:
+    if snapshot.market_relative_return_5m < market_return_min:
         return None
 
     symbol = snapshot.symbol.upper()
     score = min(
         Decimal("100"),
-        Decimal("65")
-        + snapshot.volume_robust_z_5m * Decimal("3")
-        + snapshot.oi_change_15m * Decimal("100"),
+        Decimal("65") + snapshot.volume_robust_z_5m * Decimal("3") + snapshot.oi_change_15m * Decimal("100"),
     )
     high_confirmations = []
     if near_1h_high:
@@ -169,10 +180,10 @@ def evaluate_breakout_watch(snapshot: IndicatorContext) -> AlertDecision | None:
     if near_24h_high:
         high_confirmations.append("distance_to_high_24h_bps")
 
-    high_cond: dict = {
+    high_cond: dict[str, Any] = {
         "field": "distance_to_high_1h_bps|distance_to_high_24h_bps",
         "operator": "<=",
-        "threshold": str(BREAKOUT_NEAR_HIGH_BPS),
+        "threshold": str(near_high_bps),
         "distance_to_high_1h_bps": None if snapshot.distance_to_high_1h_bps is None else str(snapshot.distance_to_high_1h_bps),
         "distance_to_high_24h_bps": None if snapshot.distance_to_high_24h_bps is None else str(snapshot.distance_to_high_24h_bps),
     }
@@ -183,11 +194,11 @@ def evaluate_breakout_watch(snapshot: IndicatorContext) -> AlertDecision | None:
         "confirmations": [*high_confirmations, "range_compression_15m", "oi_change_15m", "volume_robust_z_5m", "taker_buy_ratio_5m", "market_relative_return_5m"],
         "trigger_conditions": [
             high_cond,
-            _threshold_cond("range_compression_15m", "<=", snapshot.range_compression_15m, BREAKOUT_RANGE_COMPRESSION_MAX),
+            _threshold_cond("range_compression_15m", "<=", snapshot.range_compression_15m, range_compression_max),
             _threshold_cond("oi_change_15m", ">", snapshot.oi_change_15m, Decimal("0")),
-            _threshold_cond("volume_robust_z_5m", ">=", snapshot.volume_robust_z_5m, BREAKOUT_VOLUME_ROBUST_Z_MIN),
-            _threshold_cond("taker_buy_ratio_5m", ">=", snapshot.taker_buy_ratio_5m, BREAKOUT_TAKER_BUY_RATIO_MIN),
-            _threshold_cond("market_relative_return_5m", ">=", snapshot.market_relative_return_5m, BREAKOUT_MARKET_RELATIVE_RETURN_MIN),
+            _threshold_cond("volume_robust_z_5m", ">=", snapshot.volume_robust_z_5m, volume_z_min),
+            _threshold_cond("taker_buy_ratio_5m", ">=", snapshot.taker_buy_ratio_5m, taker_buy_min),
+            _threshold_cond("market_relative_return_5m", ">=", snapshot.market_relative_return_5m, market_return_min),
         ],
     }
 
@@ -208,20 +219,20 @@ def evaluate_breakout_watch(snapshot: IndicatorContext) -> AlertDecision | None:
 
 
 @register_rule
-def evaluate_breakdown_watch(snapshot: IndicatorContext) -> AlertDecision | None:
+def evaluate_breakdown_watch(snapshot: IndicatorContext, thresholds: dict[str, Decimal] | None = None) -> AlertDecision | None:
     if not snapshot.baseline_ready:
         return None
     if not snapshot.is_altcoin:
         return None
 
-    near_1h_low = (
-        snapshot.distance_to_low_1h_bps is not None
-        and snapshot.distance_to_low_1h_bps <= BREAKDOWN_LOW_DISTANCE_BPS
-    )
-    near_24h_low = (
-        snapshot.distance_to_low_24h_bps is not None
-        and snapshot.distance_to_low_24h_bps <= BREAKDOWN_LOW_DISTANCE_BPS
-    )
+    t = thresholds or {}
+    low_distance_bps = t.get("BREAKDOWN_LOW_DISTANCE_BPS", BREAKDOWN_LOW_DISTANCE_BPS)
+    range_compression_max = t.get("BREAKDOWN_RANGE_COMPRESSION_MAX", BREAKDOWN_RANGE_COMPRESSION_MAX)
+    volume_z_min = t.get("BREAKDOWN_VOLUME_ROBUST_Z_MIN", BREAKDOWN_VOLUME_ROBUST_Z_MIN)
+    taker_sell_min = t.get("BREAKDOWN_TAKER_SELL_RATIO_MIN", BREAKDOWN_TAKER_SELL_RATIO_MIN)
+
+    near_1h_low = snapshot.distance_to_low_1h_bps is not None and snapshot.distance_to_low_1h_bps <= low_distance_bps
+    near_24h_low = snapshot.distance_to_low_24h_bps is not None and snapshot.distance_to_low_24h_bps <= low_distance_bps
     if not (near_1h_low or near_24h_low):
         return None
     if (
@@ -232,13 +243,13 @@ def evaluate_breakdown_watch(snapshot: IndicatorContext) -> AlertDecision | None
         or snapshot.market_relative_return_5m is None
     ):
         return None
-    if snapshot.range_compression_15m > BREAKDOWN_RANGE_COMPRESSION_MAX:
+    if snapshot.range_compression_15m > range_compression_max:
         return None
     if snapshot.oi_change_15m <= 0:
         return None
-    if snapshot.volume_robust_z_5m < BREAKDOWN_VOLUME_ROBUST_Z_MIN:
+    if snapshot.volume_robust_z_5m < volume_z_min:
         return None
-    if snapshot.taker_sell_ratio_5m < BREAKDOWN_TAKER_SELL_RATIO_MIN:
+    if snapshot.taker_sell_ratio_5m < taker_sell_min:
         return None
     if snapshot.market_relative_return_5m > 0:
         return None
@@ -257,10 +268,10 @@ def evaluate_breakdown_watch(snapshot: IndicatorContext) -> AlertDecision | None
     if near_24h_low:
         low_confirmations.append("distance_to_low_24h_bps")
 
-    low_cond: dict = {
+    low_cond: dict[str, Any] = {
         "field": "distance_to_low_1h_bps|distance_to_low_24h_bps",
         "operator": "<=",
-        "threshold": str(BREAKDOWN_LOW_DISTANCE_BPS),
+        "threshold": str(low_distance_bps),
         "distance_to_low_1h_bps": None if snapshot.distance_to_low_1h_bps is None else str(snapshot.distance_to_low_1h_bps),
         "distance_to_low_24h_bps": None if snapshot.distance_to_low_24h_bps is None else str(snapshot.distance_to_low_24h_bps),
     }
@@ -271,10 +282,10 @@ def evaluate_breakdown_watch(snapshot: IndicatorContext) -> AlertDecision | None
         "confirmations": [*low_confirmations, "range_compression_15m", "oi_change_15m", "volume_robust_z_5m", "taker_sell_ratio_5m", "market_relative_return_5m"],
         "trigger_conditions": [
             low_cond,
-            _threshold_cond("range_compression_15m", "<=", snapshot.range_compression_15m, BREAKDOWN_RANGE_COMPRESSION_MAX),
+            _threshold_cond("range_compression_15m", "<=", snapshot.range_compression_15m, range_compression_max),
             _threshold_cond("oi_change_15m", ">", snapshot.oi_change_15m, Decimal("0")),
-            _threshold_cond("volume_robust_z_5m", ">=", snapshot.volume_robust_z_5m, BREAKDOWN_VOLUME_ROBUST_Z_MIN),
-            _threshold_cond("taker_sell_ratio_5m", ">=", snapshot.taker_sell_ratio_5m, BREAKDOWN_TAKER_SELL_RATIO_MIN),
+            _threshold_cond("volume_robust_z_5m", ">=", snapshot.volume_robust_z_5m, volume_z_min),
+            _threshold_cond("taker_sell_ratio_5m", ">=", snapshot.taker_sell_ratio_5m, taker_sell_min),
             _threshold_cond("market_relative_return_5m", "<=", snapshot.market_relative_return_5m, Decimal("0")),
         ],
     }

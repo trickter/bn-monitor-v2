@@ -40,7 +40,7 @@ class AlertEngine:
         alert_values = []
         for snapshot in snapshots:
             for evaluator in RULE_REGISTRY:
-                decision = evaluator(snapshot)
+                decision = evaluator(snapshot, self.settings.rule_thresholds)
                 if decision is None:
                     continue
                 alert_values.append(alert_decision_to_values(self.settings, decision))

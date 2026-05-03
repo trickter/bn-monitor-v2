@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Any
 
@@ -22,6 +24,22 @@ class UniverseMode(StrEnum):
     TOP_USDT = "top_usdt"
     EXPLICIT = "explicit"
 
+
+KNOWN_RULE_THRESHOLD_KEYS = frozenset({
+    "DAILY_FLAT_RETURN_LIMIT",
+    "DAILY_OI_BUILDUP_THRESHOLD",
+    "FLAT_15M_RETURN_LIMIT",
+    "OI_BUILDUP_15M_THRESHOLD",
+    "BREAKOUT_NEAR_HIGH_BPS",
+    "BREAKOUT_RANGE_COMPRESSION_MAX",
+    "BREAKOUT_VOLUME_ROBUST_Z_MIN",
+    "BREAKOUT_TAKER_BUY_RATIO_MIN",
+    "BREAKOUT_MARKET_RELATIVE_RETURN_MIN",
+    "BREAKDOWN_LOW_DISTANCE_BPS",
+    "BREAKDOWN_RANGE_COMPRESSION_MAX",
+    "BREAKDOWN_VOLUME_ROBUST_Z_MIN",
+    "BREAKDOWN_TAKER_SELL_RATIO_MIN",
+})
 
 KNOWN_ALERT_TYPES = frozenset(
     {
@@ -99,6 +117,7 @@ class Settings(BaseSettings):
     )
     volume_robust_z_threshold: float = Field(3.0, gt=0, validation_alias="VOLUME_ROBUST_Z_THRESHOLD")
     alert_cooldown_minutes: int = Field(10, gt=0, validation_alias="ALERT_COOLDOWN_MINUTES")
+    rule_thresholds_raw: str = Field("{}", validation_alias="RULE_THRESHOLDS")
 
     @field_validator("database_url", "binance_rest_url", "binance_ws_url")
     @classmethod
@@ -116,6 +135,23 @@ class Settings(BaseSettings):
         if unknown_types:
             raise ValueError(f"unknown alert_type in DISCORD_ALERT_TYPE_ALLOWLIST: {', '.join(unknown_types)}")
 
+        raw = self.rule_thresholds_raw.strip()
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"RULE_THRESHOLDS is not valid JSON: {exc}") from exc
+            if not isinstance(parsed, dict):
+                raise ValueError("RULE_THRESHOLDS must be a JSON object")
+            unknown_keys = sorted(k for k in parsed if k not in KNOWN_RULE_THRESHOLD_KEYS)
+            if unknown_keys:
+                raise ValueError(f"unknown key in RULE_THRESHOLDS: {', '.join(unknown_keys)}")
+            for k, v in parsed.items():
+                try:
+                    Decimal(str(v))
+                except InvalidOperation:
+                    raise ValueError(f"RULE_THRESHOLDS[{k!r}] cannot be converted to Decimal: {v!r}")
+
         return self
 
     @property
@@ -128,6 +164,13 @@ class Settings(BaseSettings):
                 symbols.append(normalized)
                 seen.add(normalized)
         return tuple(symbols)
+
+    @property
+    def rule_thresholds(self) -> dict[str, Decimal]:
+        raw = self.rule_thresholds_raw.strip()
+        if not raw or raw == "{}":
+            return {}
+        return {k: Decimal(str(v)) for k, v in json.loads(raw).items()}
 
     @property
     def discord_alert_type_allowlist(self) -> tuple[str, ...]:

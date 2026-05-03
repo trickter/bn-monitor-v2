@@ -322,3 +322,27 @@ def test_breakdown_watch_does_not_trigger_with_missing_metrics() -> None:
     assert evaluate_breakdown_watch(breakdown_snapshot(volume_robust_z_5m=None)) is None
     assert evaluate_breakdown_watch(breakdown_snapshot(taker_sell_ratio_5m=None)) is None
     assert evaluate_breakdown_watch(breakdown_snapshot(market_relative_return_5m=None)) is None
+
+
+def test_custom_threshold_changes_flat_oi_15m_trigger() -> None:
+    # With default threshold (0.005), return_15m=0.006 does not trigger.
+    assert evaluate_flat_oi_buildup_15m(snapshot(return_15m=Decimal("0.006"), oi_change_15m=Decimal("0.04"))) is None
+    # Raise the limit to 0.01: same input now triggers.
+    decision = evaluate_flat_oi_buildup_15m(
+        snapshot(return_15m=Decimal("0.006"), oi_change_15m=Decimal("0.04")),
+        thresholds={"FLAT_15M_RETURN_LIMIT": Decimal("0.01")},
+    )
+    assert decision is not None
+    assert decision.alert_type == "flat_oi_buildup_15m"
+
+
+def test_custom_threshold_changes_daily_flat_oi_trigger() -> None:
+    # With default OI threshold (0.10), oi_change_24h=0.09 does not trigger.
+    assert evaluate_daily_flat_oi_buildup(snapshot(oi_change_24h=Decimal("0.09"))) is None
+    # Lower the threshold to 0.08: same input now triggers.
+    decision = evaluate_daily_flat_oi_buildup(
+        snapshot(oi_change_24h=Decimal("0.09")),
+        thresholds={"DAILY_OI_BUILDUP_THRESHOLD": Decimal("0.08")},
+    )
+    assert decision is not None
+    assert decision.alert_type == "daily_flat_oi_buildup"

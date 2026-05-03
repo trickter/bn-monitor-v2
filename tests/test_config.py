@@ -70,3 +70,39 @@ def test_config_dump_masks_discord_webhook(tmp_path: Path) -> None:
 
     assert settings.masked_dump()["discord_webhook_url"] == "***"
 
+
+def test_rule_thresholds_default_is_empty(tmp_path: Path) -> None:
+    settings = Settings(_env_file=tmp_path / "missing.env")
+
+    assert settings.rule_thresholds == {}
+
+
+def test_rule_thresholds_parses_valid_json(tmp_path: Path) -> None:
+    from decimal import Decimal
+
+    env_file = write_env(tmp_path, 'RULE_THRESHOLDS={"FLAT_15M_RETURN_LIMIT": "0.01"}\n')
+    settings = settings_from_env(env_file)
+
+    assert settings.rule_thresholds == {"FLAT_15M_RETURN_LIMIT": Decimal("0.01")}
+
+
+def test_rule_thresholds_rejects_unknown_key(tmp_path: Path) -> None:
+    env_file = write_env(tmp_path, 'RULE_THRESHOLDS={"UNKNOWN_THRESHOLD": "0.05"}\n')
+
+    with pytest.raises(ValidationError, match="unknown key in RULE_THRESHOLDS"):
+        settings_from_env(env_file)
+
+
+def test_rule_thresholds_rejects_invalid_json(tmp_path: Path) -> None:
+    env_file = write_env(tmp_path, "RULE_THRESHOLDS=not-json\n")
+
+    with pytest.raises(ValidationError, match="not valid JSON"):
+        settings_from_env(env_file)
+
+
+def test_rule_thresholds_rejects_non_decimal_value(tmp_path: Path) -> None:
+    env_file = write_env(tmp_path, 'RULE_THRESHOLDS={"FLAT_15M_RETURN_LIMIT": "abc"}\n')
+
+    with pytest.raises(ValidationError, match="cannot be converted to Decimal"):
+        settings_from_env(env_file)
+
