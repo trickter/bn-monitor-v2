@@ -25,6 +25,7 @@ def test_default_settings_load_without_env_file(tmp_path: Path) -> None:
     assert settings.discord_min_severity == Severity.WARNING
     assert settings.universe_mode == UniverseMode.TOP_USDT
     assert settings.discord_alert_type_allowlist == ()
+    assert settings.monitor_poll_interval_seconds == 300
 
 
 def test_unknown_env_key_fails_startup(tmp_path: Path) -> None:
@@ -54,6 +55,13 @@ def test_symbols_are_normalized_and_deduplicated(tmp_path: Path) -> None:
     settings = settings_from_env(env_file)
 
     assert settings.symbols == ("SOLUSDT", "BNBUSDT")
+
+
+def test_monitor_poll_interval_must_be_positive(tmp_path: Path) -> None:
+    env_file = write_env(tmp_path, "MONITOR_POLL_INTERVAL_SECONDS=0\n")
+
+    with pytest.raises(ValidationError):
+        settings_from_env(env_file)
 
 
 def test_unknown_discord_allowlist_type_fails_startup(tmp_path: Path) -> None:
@@ -112,4 +120,3 @@ def test_rule_thresholds_rejects_non_decimal_value(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="cannot be converted to Decimal"):
         settings_from_env(env_file)
-

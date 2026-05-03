@@ -1,21 +1,40 @@
 # bn-monitor-v2
 
-币安 USD-M Futures 二级市场 altcoin 异动监控告警系统。
+Binance USD-M Futures altcoin anomaly monitor.
 
-当前实现进度：
+## Current Runtime
 
-- 工程骨架
-- 显式 `.env` 配置校验
-- Discord 投递资格判断
-- `healthcheck` / `config-dump` CLI
-
-## 本地验证
+The production entrypoint is a REST polling runner:
 
 ```bash
-python -m pytest
-python -m monitor.cli healthcheck
-python -m monitor.cli config-dump
+bn-monitor run
 ```
 
-配置说明见 `docs/configuration.md`。
+It periodically fetches Binance 1m klines and 5m open interest, persists market data, evaluates alert rules, stores alerts, and sends Discord messages when delivery checks pass.
 
+For a single check:
+
+```bash
+bn-monitor run --once
+```
+
+## Local Verification
+
+```bash
+python -m pytest tests -q
+python -m monitor.cli healthcheck
+python -m monitor.cli config-dump
+python -m monitor.cli run --once --symbols SOLUSDT,BNBUSDT
+```
+
+## Docker Compose
+
+Create `.env` from `.env.example`, then run:
+
+```bash
+docker compose up --build
+```
+
+`docker-compose.yml` starts TimescaleDB and the app container. The app runs migrations before starting the continuous monitor.
+
+Configuration details are in `docs/configuration.md`.

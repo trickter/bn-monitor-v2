@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from typing import Sequence
 
 from pydantic import ValidationError
@@ -18,10 +19,23 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("healthcheck")
     subparsers.add_parser("config-dump")
     subparsers.add_parser("test-discord")
+    run = subparsers.add_parser("run")
+    run.add_argument("--symbols", help="Comma-separated symbols. Defaults to SYMBOLS from .env.")
+    run.add_argument("--once", action="store_true", help="Run one polling cycle and exit.")
+    run.add_argument("--no-discord", action="store_true", help="Do not send pending alerts to Discord.")
+    run.add_argument("--poll-interval-seconds", type=int, help="Override MONITOR_POLL_INTERVAL_SECONDS.")
     live_smoke = subparsers.add_parser("live-smoke")
     live_smoke.add_argument("--symbols", help="Comma-separated symbols. Defaults to SYMBOLS from .env.")
     live_smoke.add_argument("--no-discord", action="store_true", help="Do not send pending alerts to Discord.")
     return parser
+
+
+def _parse_symbols(raw: str) -> tuple[str, ...]:
+    return tuple(item.strip().upper() for item in raw.split(",") if item.strip())
+
+
+def _resolve_symbols(settings, symbols_arg: str | None) -> tuple[str, ...]:
+    return _parse_symbols(symbols_arg) if symbols_arg is not None else settings.symbols
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -49,12 +63,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("discord ok")
         return 0
 
+    if args.command == "run":
+        symbols = _resolve_symbols(settings, args.symbols)
+        if not symbols:
+            parser.exit(2, "run requires --symbols or SYMBOLS in .env; top_usdt discovery is not implemented yet\n")
+        poll_interval = args.poll_interval_seconds or settings.monitor_poll_interval_seconds
+        if poll_interval <= 0:
+            parser.exit(2, "--poll-interval-seconds must be a positive integer\n")
+        engine = build_engine(settings)
+        session_factory = build_session_factory(engine)
+        while True:
+            with session_scope(session_factory) as session:
+                result = run_live_smoke(settings, session, symbols, send_discord=not args.no_discord)
+            print(json.dumps(result["summary"], indent=2, sort_keys=True), flush=True)
+            if args.once:
+                return 0
+            time.sleep(poll_interval)
+
     if args.command == "live-smoke":
-        symbols = tuple(
-            item.strip().upper()
-            for item in ((args.symbols or ",".join(settings.symbols)).split(","))
-            if item.strip()
-        )
+        symbols = _resolve_symbols(settings, args.symbols)
         if not symbols:
             parser.exit(2, "live-smoke requires --symbols or SYMBOLS in .env\n")
         engine = build_engine(settings)

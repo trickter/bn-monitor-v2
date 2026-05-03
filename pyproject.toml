@@ -25,6 +25,9 @@ dev = [
 [project.scripts]
 bn-monitor = "monitor.cli:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["monitor"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

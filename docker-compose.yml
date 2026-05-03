@@ -1,4 +1,17 @@
 services:
+  app:
+    build: .
+    container_name: bn-monitor-app
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@timescaledb:5432/bn_monitor
+    command: sh -c "alembic upgrade head && bn-monitor run"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    restart: unless-stopped
+
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     container_name: bn-monitor-timescaledb
@@ -18,4 +31,3 @@ services:
 
 volumes:
   timescaledb-data:
-
