@@ -8,10 +8,18 @@ from monitor.alerts.delivery import evaluate_discord_delivery
 from monitor.alerts.rules import (
     AlertDecision,
     IndicatorContext,
+    evaluate_breakout_watch,
     evaluate_daily_flat_oi_buildup,
     evaluate_flat_oi_buildup_15m,
 )
 from monitor.config import Settings
+
+
+RULE_EVALUATORS = (
+    evaluate_flat_oi_buildup_15m,
+    evaluate_daily_flat_oi_buildup,
+    evaluate_breakout_watch,
+)
 
 
 def alert_decision_to_values(settings: Settings, decision: AlertDecision) -> dict[str, Any]:
@@ -43,10 +51,9 @@ class AlertEngine:
     def evaluate(self, snapshots: Iterable[IndicatorContext]) -> list[dict[str, Any]]:
         alert_values = []
         for snapshot in snapshots:
-            for evaluator in (evaluate_flat_oi_buildup_15m, evaluate_daily_flat_oi_buildup):
+            for evaluator in RULE_EVALUATORS:
                 decision = evaluator(snapshot)
                 if decision is None:
                     continue
                 alert_values.append(alert_decision_to_values(self.settings, decision))
         return alert_values
-

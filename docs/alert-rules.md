@@ -1,10 +1,16 @@
 # Alert Rules
 
-当前版本实现 `flat_oi_buildup_15m` 和 `daily_flat_oi_buildup` 纯规则函数。
+当前版本实现以下纯规则函数：
+
+- `flat_oi_buildup_15m`
+- `daily_flat_oi_buildup`
+- `breakout_watch`
+
+这些规则只生成观察信号，不给自动交易建议。`breakout_watch` 是临界观察，不表示已经确认突破。
 
 ## flat_oi_buildup_15m
 
-用途：扫描 15m 价格基本横盘但合约持仓快速增长的 altcoin，作为短线横盘增仓观察信号。
+用途：扫描 15m 价格基本横盘但合约持仓快速增长的 altcoin。
 
 触发条件：
 
@@ -15,24 +21,13 @@ AND baseline_ready == true
 AND is_altcoin == true
 ```
 
-说明：
+输出：
 
-- `return_15m` 和 `oi_change_15m` 使用比例值表示，0.5% 为 `0.005`，3% 为 `0.03`。
-- 输出等级为 `WARNING`。
-- `direction` 为 `none`，因为该信号只表示横盘增仓观察，不预测方向。
-- 样本不足、非 altcoin、15m return 缺失或 15m OI change 缺失时不触发正式告警。
-
-payload 必须包含：
-
-```json
-{
-  "symbol": "SOLUSDT",
-  "signal_window": "15m",
-  "confirmation_window": "15m",
-  "confirmations": ["oi_change_15m"],
-  "trigger_conditions": []
-}
-```
+- `alert_type=flat_oi_buildup_15m`
+- `severity=WARNING`
+- `direction=none`
+- `signal_window=15m`
+- `confirmation_window=15m`
 
 ## daily_flat_oi_buildup
 
@@ -47,21 +42,49 @@ AND baseline_ready == true
 AND is_altcoin == true
 ```
 
-说明：
+输出：
 
-- `return_24h` 和 `oi_change_24h` 使用比例值表示，3% 为 `0.03`，10% 为 `0.10`。
-- 输出等级为 `WARNING`。
-- `direction` 为 `none`，因为该信号只表示横盘增仓观察，不预测方向。
-- 样本不足时不得触发正式告警。
+- `alert_type=daily_flat_oi_buildup`
+- `severity=WARNING`
+- `direction=none`
+- `signal_window=24h`
+- `confirmation_window=24h`
 
-payload 必须包含：
+## breakout_watch
+
+用途：识别接近近期上沿、可能向上突破的临界观察币。
+
+触发条件：
+
+```text
+distance_to_high_1h_bps <= 50 OR distance_to_high_24h_bps <= 50
+AND range_compression_15m <= 0.70
+AND oi_change_15m > 0
+AND volume_robust_z_5m >= 3.0
+AND taker_buy_ratio_5m >= 0.60
+AND market_relative_return_5m >= 0
+AND baseline_ready == true
+AND is_altcoin == true
+```
+
+输出：
+
+- `alert_type=breakout_watch`
+- `severity=WARNING`
+- `direction=up`
+- `signal_window=15m`
+- `confirmation_window=1h`
+
+## Payload
+
+每条规则输出 payload 至少包含：
 
 ```json
 {
   "symbol": "SOLUSDT",
-  "signal_window": "24h",
-  "confirmation_window": "24h",
-  "confirmations": ["oi_change_24h"],
+  "signal_window": "15m",
+  "confirmation_window": "1h",
+  "confirmations": [],
   "trigger_conditions": []
 }
 ```
@@ -69,8 +92,7 @@ payload 必须包含：
 ## 验收
 
 - 覆盖触发场景。
-- 覆盖 OI 不足阈值。
-- 覆盖 return 超出横盘阈值。
+- 覆盖 OI、return、volume、taker、market-relative 等关键条件不满足。
 - 覆盖 baseline 样本不足。
 - 覆盖非 altcoin universe。
 - 覆盖指标缺失。
