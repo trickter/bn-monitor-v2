@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
-from monitor.indicators import IndicatorContext
 from monitor.app import run_live_smoke
 from monitor.binance.rest import build_indicator_context, parse_open_interest, parse_rest_kline
 from monitor.config import Settings
@@ -20,44 +20,49 @@ class FakeSession:
 
 class FakeBinanceClient:
     def fetch_symbol_market_data(self, symbol: str):
-        class MarketData:
-            pass
-
-        data = MarketData()
-        data.klines = [
-            {
-                "ts": datetime(2026, 5, 3, 1, 0, tzinfo=UTC),
-                "symbol": symbol,
-                "open": Decimal("100"),
-                "high": Decimal("101"),
-                "low": Decimal("99"),
-                "close": Decimal("100"),
-                "base_volume": Decimal("1"),
-                "quote_volume": Decimal("100"),
-                "trade_count": 1,
-                "taker_buy_base_volume": Decimal("0.5"),
-                "taker_buy_quote_volume": Decimal("50"),
-            }
-        ]
-        data.open_interest = [
-            {
-                "ts": datetime(2026, 5, 3, 1, 0, tzinfo=UTC),
-                "symbol": symbol,
-                "open_interest": Decimal("100"),
-                "open_interest_value": Decimal("1000"),
-                "period": "5m",
-                "source": "openInterestHist",
-            }
-        ]
-        data.indicator = IndicatorContext(
-            ts=datetime(2026, 5, 3, 1, 0, tzinfo=UTC),
-            symbol=symbol,
-            return_24h=Decimal("0.01"),
-            oi_change_24h=Decimal("0.12"),
-            baseline_ready=True,
-            is_altcoin=True,
+        return SimpleNamespace(
+            klines=synthetic_klines(symbol),
+            open_interest=synthetic_open_interest(symbol),
         )
-        return data
+
+
+def synthetic_klines(symbol: str) -> list[dict]:
+    start = datetime(2026, 5, 3, tzinfo=UTC)
+    rows = []
+    for i in range(1441):
+        close = Decimal("100") + Decimal(i) / Decimal("1440")
+        quote_volume = Decimal("1000") + Decimal(i % 11)
+        rows.append(
+            {
+                "ts": start + timedelta(minutes=i),
+                "symbol": symbol.upper(),
+                "open": close,
+                "high": close + Decimal("1"),
+                "low": close - Decimal("1"),
+                "close": close,
+                "base_volume": Decimal("10"),
+                "quote_volume": quote_volume,
+                "trade_count": 10,
+                "taker_buy_base_volume": Decimal("5"),
+                "taker_buy_quote_volume": quote_volume * Decimal("0.5"),
+            }
+        )
+    return rows
+
+
+def synthetic_open_interest(symbol: str) -> list[dict]:
+    start = datetime(2026, 5, 3, tzinfo=UTC)
+    return [
+        {
+            "ts": start + timedelta(minutes=i * 5),
+            "symbol": symbol.upper(),
+            "open_interest": Decimal("1000") + Decimal(i) * Decimal("0.5"),
+            "open_interest_value": Decimal("100000") + Decimal(i) * Decimal("50"),
+            "period": "5m",
+            "source": "openInterestHist",
+        }
+        for i in range(288)
+    ]
 
 
 def settings_from_text(tmp_path: Path, text: str) -> Settings:
@@ -90,19 +95,13 @@ def test_parse_open_interest_maps_fields() -> None:
 
 
 def test_build_indicator_context_computes_return_and_oi_change() -> None:
-    klines = [
-        {"ts": datetime(2026, 5, 3, 1, 0, tzinfo=UTC), "close": Decimal("100")},
-        {"ts": datetime(2026, 5, 4, 1, 0, tzinfo=UTC), "close": Decimal("102")},
-    ] * 600
-    open_interest = [
-        {"open_interest": Decimal("100")},
-        {"open_interest": Decimal("115")},
-    ] * 120
+    klines = synthetic_klines("SOLUSDT")
+    open_interest = synthetic_open_interest("SOLUSDT")
 
     context = build_indicator_context("SOLUSDT", klines, open_interest)
 
-    assert context.return_24h == Decimal("0.02")
-    assert context.oi_change_24h == Decimal("0.15")
+    assert context.return_24h == Decimal("0.01")
+    assert context.oi_change_24h == Decimal("143.5") / Decimal("1000")
     assert context.baseline_ready is True
     assert context.is_altcoin is True
 
@@ -115,5 +114,4 @@ def test_run_live_smoke_persists_market_data_and_alert(tmp_path: Path) -> None:
 
     assert result["summary"]["total"] == 1
     assert result["summary"]["by_type"] == {"daily_flat_oi_buildup": 1}
-    assert len(session.executed) == 3
-
+    assert len(session.executed) == 1441 + 288 + 1

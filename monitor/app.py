@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from monitor.alerts.engine import AlertEngine
 from monitor.indicators import IndicatorContext
-from monitor.binance.rest import BinanceRestClient
+from monitor.binance.rest import BinanceRestClient, build_indicator_contexts
 from monitor.config import Settings
 from monitor.discord import format_alert_message, send_discord_message
 from monitor.repository import insert_alert_once, upsert_kline_1m, upsert_open_interest
@@ -33,15 +33,16 @@ def run_live_smoke(
     send_discord: bool = True,
 ) -> dict:
     client = binance_client or BinanceRestClient(settings)
-    snapshots = []
+    symbol_data = {}
     for symbol in symbols:
         market_data = client.fetch_symbol_market_data(symbol)
-        snapshots.append(market_data.indicator)
+        symbol_data[symbol.upper()] = market_data
         for kline in market_data.klines:
             upsert_kline_1m(session, kline)
         for open_interest in market_data.open_interest:
             upsert_open_interest(session, open_interest)
 
+    snapshots = list(build_indicator_contexts(symbol_data).values())
     engine = AlertEngine(settings)
     alert_values = engine.evaluate(snapshots)
     for values in alert_values:

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 from monitor.alerts.engine import AlertEngine
+from monitor.binance.rest import build_indicator_contexts
 from monitor.indicators import IndicatorContext
 from monitor.config import Settings
 
@@ -68,6 +70,65 @@ def breakdown_snapshot() -> IndicatorContext:
         taker_sell_ratio_5m=Decimal("0.65"),
         market_relative_return_5m=Decimal("-0.01"),
     )
+
+
+def market_symbol_data(
+    symbol: str,
+    *,
+    return_5m: Decimal,
+    taker_buy_ratio: Decimal,
+) -> SimpleNamespace:
+    start = datetime(2026, 5, 3, tzinfo=UTC)
+    final_close = Decimal("101")
+    first_last_5_close = final_close / (Decimal("1") + return_5m)
+    klines = []
+    for i in range(1441):
+        close = Decimal("100") + Decimal(i % 15) * Decimal("0.02")
+        high = close + Decimal("1")
+        low = close - Decimal("1")
+        quote_volume = Decimal("1000") + Decimal(i % 17) * Decimal("7")
+        if i >= 1381:
+            close = final_close + Decimal(i - 1426) * Decimal("0.0005")
+            high = close + Decimal("0.03")
+            low = close - Decimal("0.03")
+            quote_volume = Decimal("1005") + Decimal(i % 3)
+        if i >= 1436:
+            step = Decimal(i - 1436) / Decimal("4")
+            close = first_last_5_close + (final_close - first_last_5_close) * step
+            high = close + Decimal("0.03")
+            low = close - Decimal("0.03")
+            quote_volume = Decimal("5000") + Decimal(i - 1436) * Decimal("10")
+        klines.append(
+            {
+                "ts": start + timedelta(minutes=i),
+                "symbol": symbol,
+                "open": close,
+                "high": high,
+                "low": low,
+                "close": close,
+                "base_volume": Decimal("10"),
+                "quote_volume": quote_volume,
+                "trade_count": 10,
+                "taker_buy_base_volume": Decimal("5"),
+                "taker_buy_quote_volume": quote_volume * taker_buy_ratio,
+            }
+        )
+
+    open_interest = [
+        {
+            "ts": start + timedelta(minutes=i * 5),
+            "symbol": symbol,
+            "open_interest": Decimal("1000") + Decimal(i) * Decimal("0.5"),
+            "open_interest_value": Decimal("100000") + Decimal(i) * Decimal("50"),
+            "period": "5m",
+            "source": "openInterestHist",
+        }
+        for i in range(288)
+    ]
+    open_interest[-3]["open_interest"] = Decimal("1080")
+    open_interest[-2]["open_interest"] = Decimal("1100")
+    open_interest[-1]["open_interest"] = Decimal("1120")
+    return SimpleNamespace(klines=klines, open_interest=open_interest)
 
 
 def test_engine_generates_suppressed_alert_values_in_shadow_mode(tmp_path: Path) -> None:
@@ -161,3 +222,41 @@ def test_engine_generates_breakdown_watch_values(tmp_path: Path) -> None:
     assert values[0]["direction"] == "down"
     assert values[0]["payload"]["signal_window"] == "15m"
     assert values[0]["delivery_status"] == "pending"
+
+
+def test_engine_generates_all_four_rules_from_produced_indicator_contexts(tmp_path: Path) -> None:
+    contexts = build_indicator_contexts(
+        {
+            "FLATUSDT": market_symbol_data(
+                "FLATUSDT",
+                return_5m=Decimal("0"),
+                taker_buy_ratio=Decimal("0.50"),
+            ),
+            "DAILYUSDT": market_symbol_data(
+                "DAILYUSDT",
+                return_5m=Decimal("0"),
+                taker_buy_ratio=Decimal("0.50"),
+            ),
+            "UPUSDT": market_symbol_data(
+                "UPUSDT",
+                return_5m=Decimal("0.001"),
+                taker_buy_ratio=Decimal("0.65"),
+            ),
+            "DOWNUSDT": market_symbol_data(
+                "DOWNUSDT",
+                return_5m=Decimal("-0.001"),
+                taker_buy_ratio=Decimal("0.35"),
+            ),
+        }
+    )
+    engine = AlertEngine(settings_from_text(tmp_path, "ALERT_MODE=shadow\n"))
+
+    values = engine.evaluate(contexts.values())
+
+    alert_types = {value["alert_type"] for value in values}
+    assert {
+        "flat_oi_buildup_15m",
+        "daily_flat_oi_buildup",
+        "breakout_watch",
+        "breakdown_watch",
+    } <= alert_types
