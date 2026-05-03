@@ -5,7 +5,12 @@ from copy import deepcopy
 from typing import Any
 
 from monitor.alerts.delivery import evaluate_discord_delivery
-from monitor.alerts.rules import AlertDecision, IndicatorContext, evaluate_daily_flat_oi_buildup
+from monitor.alerts.rules import (
+    AlertDecision,
+    IndicatorContext,
+    evaluate_daily_flat_oi_buildup,
+    evaluate_flat_oi_buildup_15m,
+)
 from monitor.config import Settings
 
 
@@ -38,9 +43,10 @@ class AlertEngine:
     def evaluate(self, snapshots: Iterable[IndicatorContext]) -> list[dict[str, Any]]:
         alert_values = []
         for snapshot in snapshots:
-            decision = evaluate_daily_flat_oi_buildup(snapshot)
-            if decision is None:
-                continue
-            alert_values.append(alert_decision_to_values(self.settings, decision))
+            for evaluator in (evaluate_flat_oi_buildup_15m, evaluate_daily_flat_oi_buildup):
+                decision = evaluator(snapshot)
+                if decision is None:
+                    continue
+                alert_values.append(alert_decision_to_values(self.settings, decision))
         return alert_values
 
