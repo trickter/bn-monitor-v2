@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from monitor.alerts.rules import IndicatorContext
+from monitor.indicators import IndicatorContext
 from monitor.app import run_live_smoke
 from monitor.binance.rest import build_indicator_context, parse_open_interest, parse_rest_kline
 from monitor.config import Settings

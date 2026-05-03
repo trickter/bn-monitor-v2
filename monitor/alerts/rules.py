@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from collections.abc import Callable
 from decimal import Decimal
-from typing import Any
+
+from monitor.indicators import AlertDecision, IndicatorContext
 
 
 DAILY_FLAT_RETURN_LIMIT = Decimal("0.03")
@@ -20,41 +20,23 @@ BREAKDOWN_RANGE_COMPRESSION_MAX = Decimal("0.70")
 BREAKDOWN_VOLUME_ROBUST_Z_MIN = Decimal("3.0")
 BREAKDOWN_TAKER_SELL_RATIO_MIN = Decimal("0.60")
 
-
-@dataclass(frozen=True)
-class IndicatorContext:
-    ts: datetime
-    symbol: str
-    return_24h: Decimal | None
-    oi_change_24h: Decimal | None
-    baseline_ready: bool
-    is_altcoin: bool
-    return_15m: Decimal | None = None
-    oi_change_15m: Decimal | None = None
-    distance_to_high_1h_bps: Decimal | None = None
-    distance_to_high_24h_bps: Decimal | None = None
-    distance_to_low_1h_bps: Decimal | None = None
-    distance_to_low_24h_bps: Decimal | None = None
-    range_compression_15m: Decimal | None = None
-    volume_robust_z_5m: Decimal | None = None
-    taker_buy_ratio_5m: Decimal | None = None
-    taker_sell_ratio_5m: Decimal | None = None
-    market_relative_return_5m: Decimal | None = None
+RULE_REGISTRY: list[Callable[[IndicatorContext], AlertDecision | None]] = []
 
 
-@dataclass(frozen=True)
-class AlertDecision:
-    ts: datetime
-    symbol: str
-    alert_type: str
-    severity: str
-    direction: str
-    score: Decimal
-    title: str
-    message: str
-    payload: dict[str, Any]
+def register_rule(fn: Callable[[IndicatorContext], AlertDecision | None]) -> Callable[[IndicatorContext], AlertDecision | None]:
+    RULE_REGISTRY.append(fn)
+    return fn
 
 
+def _threshold_cond(field: str, op: str, value: Decimal, threshold: Decimal) -> dict:
+    return {"field": field, "operator": op, "value": str(value), "threshold": str(threshold)}
+
+
+def _between_cond(field: str, value: Decimal, min_val: Decimal, max_val: Decimal) -> dict:
+    return {"field": field, "operator": "between", "value": str(value), "min": str(min_val), "max": str(max_val)}
+
+
+@register_rule
 def evaluate_flat_oi_buildup_15m(snapshot: IndicatorContext) -> AlertDecision | None:
     if not snapshot.baseline_ready:
         return None
@@ -75,19 +57,8 @@ def evaluate_flat_oi_buildup_15m(snapshot: IndicatorContext) -> AlertDecision | 
         "confirmation_window": "15m",
         "confirmations": ["oi_change_15m"],
         "trigger_conditions": [
-            {
-                "field": "return_15m",
-                "operator": "between",
-                "value": str(snapshot.return_15m),
-                "min": str(-FLAT_15M_RETURN_LIMIT),
-                "max": str(FLAT_15M_RETURN_LIMIT),
-            },
-            {
-                "field": "oi_change_15m",
-                "operator": ">=",
-                "value": str(snapshot.oi_change_15m),
-                "threshold": str(OI_BUILDUP_15M_THRESHOLD),
-            },
+            _between_cond("return_15m", snapshot.return_15m, -FLAT_15M_RETURN_LIMIT, FLAT_15M_RETURN_LIMIT),
+            _threshold_cond("oi_change_15m", ">=", snapshot.oi_change_15m, OI_BUILDUP_15M_THRESHOLD),
         ],
     }
 
@@ -107,6 +78,7 @@ def evaluate_flat_oi_buildup_15m(snapshot: IndicatorContext) -> AlertDecision | 
     )
 
 
+@register_rule
 def evaluate_daily_flat_oi_buildup(snapshot: IndicatorContext) -> AlertDecision | None:
     if not snapshot.baseline_ready:
         return None
@@ -127,19 +99,8 @@ def evaluate_daily_flat_oi_buildup(snapshot: IndicatorContext) -> AlertDecision 
         "confirmation_window": "24h",
         "confirmations": ["oi_change_24h"],
         "trigger_conditions": [
-            {
-                "field": "return_24h",
-                "operator": "between",
-                "value": str(snapshot.return_24h),
-                "min": str(-DAILY_FLAT_RETURN_LIMIT),
-                "max": str(DAILY_FLAT_RETURN_LIMIT),
-            },
-            {
-                "field": "oi_change_24h",
-                "operator": ">=",
-                "value": str(snapshot.oi_change_24h),
-                "threshold": str(DAILY_OI_BUILDUP_THRESHOLD),
-            },
+            _between_cond("return_24h", snapshot.return_24h, -DAILY_FLAT_RETURN_LIMIT, DAILY_FLAT_RETURN_LIMIT),
+            _threshold_cond("oi_change_24h", ">=", snapshot.oi_change_24h, DAILY_OI_BUILDUP_THRESHOLD),
         ],
     }
 
@@ -159,6 +120,7 @@ def evaluate_daily_flat_oi_buildup(snapshot: IndicatorContext) -> AlertDecision 
     )
 
 
+@register_rule
 def evaluate_breakout_watch(snapshot: IndicatorContext) -> AlertDecision | None:
     if not snapshot.baseline_ready:
         return None
@@ -207,64 +169,25 @@ def evaluate_breakout_watch(snapshot: IndicatorContext) -> AlertDecision | None:
     if near_24h_high:
         high_confirmations.append("distance_to_high_24h_bps")
 
+    high_cond: dict = {
+        "field": "distance_to_high_1h_bps|distance_to_high_24h_bps",
+        "operator": "<=",
+        "threshold": str(BREAKOUT_NEAR_HIGH_BPS),
+        "distance_to_high_1h_bps": None if snapshot.distance_to_high_1h_bps is None else str(snapshot.distance_to_high_1h_bps),
+        "distance_to_high_24h_bps": None if snapshot.distance_to_high_24h_bps is None else str(snapshot.distance_to_high_24h_bps),
+    }
     payload = {
         "symbol": symbol,
         "signal_window": "15m",
         "confirmation_window": "1h",
-        "confirmations": [
-            *high_confirmations,
-            "range_compression_15m",
-            "oi_change_15m",
-            "volume_robust_z_5m",
-            "taker_buy_ratio_5m",
-            "market_relative_return_5m",
-        ],
+        "confirmations": [*high_confirmations, "range_compression_15m", "oi_change_15m", "volume_robust_z_5m", "taker_buy_ratio_5m", "market_relative_return_5m"],
         "trigger_conditions": [
-            {
-                "field": "distance_to_high_1h_bps|distance_to_high_24h_bps",
-                "operator": "<=",
-                "threshold": str(BREAKOUT_NEAR_HIGH_BPS),
-                "distance_to_high_1h_bps": (
-                    None
-                    if snapshot.distance_to_high_1h_bps is None
-                    else str(snapshot.distance_to_high_1h_bps)
-                ),
-                "distance_to_high_24h_bps": (
-                    None
-                    if snapshot.distance_to_high_24h_bps is None
-                    else str(snapshot.distance_to_high_24h_bps)
-                ),
-            },
-            {
-                "field": "range_compression_15m",
-                "operator": "<=",
-                "value": str(snapshot.range_compression_15m),
-                "threshold": str(BREAKOUT_RANGE_COMPRESSION_MAX),
-            },
-            {
-                "field": "oi_change_15m",
-                "operator": ">",
-                "value": str(snapshot.oi_change_15m),
-                "threshold": "0",
-            },
-            {
-                "field": "volume_robust_z_5m",
-                "operator": ">=",
-                "value": str(snapshot.volume_robust_z_5m),
-                "threshold": str(BREAKOUT_VOLUME_ROBUST_Z_MIN),
-            },
-            {
-                "field": "taker_buy_ratio_5m",
-                "operator": ">=",
-                "value": str(snapshot.taker_buy_ratio_5m),
-                "threshold": str(BREAKOUT_TAKER_BUY_RATIO_MIN),
-            },
-            {
-                "field": "market_relative_return_5m",
-                "operator": ">=",
-                "value": str(snapshot.market_relative_return_5m),
-                "threshold": str(BREAKOUT_MARKET_RELATIVE_RETURN_MIN),
-            },
+            high_cond,
+            _threshold_cond("range_compression_15m", "<=", snapshot.range_compression_15m, BREAKOUT_RANGE_COMPRESSION_MAX),
+            _threshold_cond("oi_change_15m", ">", snapshot.oi_change_15m, Decimal("0")),
+            _threshold_cond("volume_robust_z_5m", ">=", snapshot.volume_robust_z_5m, BREAKOUT_VOLUME_ROBUST_Z_MIN),
+            _threshold_cond("taker_buy_ratio_5m", ">=", snapshot.taker_buy_ratio_5m, BREAKOUT_TAKER_BUY_RATIO_MIN),
+            _threshold_cond("market_relative_return_5m", ">=", snapshot.market_relative_return_5m, BREAKOUT_MARKET_RELATIVE_RETURN_MIN),
         ],
     }
 
@@ -284,6 +207,7 @@ def evaluate_breakout_watch(snapshot: IndicatorContext) -> AlertDecision | None:
     )
 
 
+@register_rule
 def evaluate_breakdown_watch(snapshot: IndicatorContext) -> AlertDecision | None:
     if not snapshot.baseline_ready:
         return None
@@ -333,64 +257,25 @@ def evaluate_breakdown_watch(snapshot: IndicatorContext) -> AlertDecision | None
     if near_24h_low:
         low_confirmations.append("distance_to_low_24h_bps")
 
+    low_cond: dict = {
+        "field": "distance_to_low_1h_bps|distance_to_low_24h_bps",
+        "operator": "<=",
+        "threshold": str(BREAKDOWN_LOW_DISTANCE_BPS),
+        "distance_to_low_1h_bps": None if snapshot.distance_to_low_1h_bps is None else str(snapshot.distance_to_low_1h_bps),
+        "distance_to_low_24h_bps": None if snapshot.distance_to_low_24h_bps is None else str(snapshot.distance_to_low_24h_bps),
+    }
     payload = {
         "symbol": symbol,
         "signal_window": "15m",
         "confirmation_window": "1h",
-        "confirmations": [
-            *low_confirmations,
-            "range_compression_15m",
-            "oi_change_15m",
-            "volume_robust_z_5m",
-            "taker_sell_ratio_5m",
-            "market_relative_return_5m",
-        ],
+        "confirmations": [*low_confirmations, "range_compression_15m", "oi_change_15m", "volume_robust_z_5m", "taker_sell_ratio_5m", "market_relative_return_5m"],
         "trigger_conditions": [
-            {
-                "field": "distance_to_low_1h_bps|distance_to_low_24h_bps",
-                "operator": "<=",
-                "threshold": str(BREAKDOWN_LOW_DISTANCE_BPS),
-                "distance_to_low_1h_bps": (
-                    None
-                    if snapshot.distance_to_low_1h_bps is None
-                    else str(snapshot.distance_to_low_1h_bps)
-                ),
-                "distance_to_low_24h_bps": (
-                    None
-                    if snapshot.distance_to_low_24h_bps is None
-                    else str(snapshot.distance_to_low_24h_bps)
-                ),
-            },
-            {
-                "field": "range_compression_15m",
-                "operator": "<=",
-                "value": str(snapshot.range_compression_15m),
-                "threshold": str(BREAKDOWN_RANGE_COMPRESSION_MAX),
-            },
-            {
-                "field": "oi_change_15m",
-                "operator": ">",
-                "value": str(snapshot.oi_change_15m),
-                "threshold": "0",
-            },
-            {
-                "field": "volume_robust_z_5m",
-                "operator": ">=",
-                "value": str(snapshot.volume_robust_z_5m),
-                "threshold": str(BREAKDOWN_VOLUME_ROBUST_Z_MIN),
-            },
-            {
-                "field": "taker_sell_ratio_5m",
-                "operator": ">=",
-                "value": str(snapshot.taker_sell_ratio_5m),
-                "threshold": str(BREAKDOWN_TAKER_SELL_RATIO_MIN),
-            },
-            {
-                "field": "market_relative_return_5m",
-                "operator": "<=",
-                "value": str(snapshot.market_relative_return_5m),
-                "threshold": "0",
-            },
+            low_cond,
+            _threshold_cond("range_compression_15m", "<=", snapshot.range_compression_15m, BREAKDOWN_RANGE_COMPRESSION_MAX),
+            _threshold_cond("oi_change_15m", ">", snapshot.oi_change_15m, Decimal("0")),
+            _threshold_cond("volume_robust_z_5m", ">=", snapshot.volume_robust_z_5m, BREAKDOWN_VOLUME_ROBUST_Z_MIN),
+            _threshold_cond("taker_sell_ratio_5m", ">=", snapshot.taker_sell_ratio_5m, BREAKDOWN_TAKER_SELL_RATIO_MIN),
+            _threshold_cond("market_relative_return_5m", "<=", snapshot.market_relative_return_5m, Decimal("0")),
         ],
     }
 

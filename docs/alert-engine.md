@@ -2,9 +2,16 @@
 
 当前 Alert Engine 是最小实现：接收指标上下文，执行已实现规则，返回可写入 `alerts` 表的 values。
 
+## 规则注册机制
+
+规则函数通过 `@register_rule` 装饰器自注册到 `RULE_REGISTRY`。`AlertEngine` 在运行时迭代该列表，**新增规则只需在 `alerts/rules.py` 中定义函数并加装饰器，不需要改 engine.py**。
+
 ## 当前规则
 
+- `flat_oi_buildup_15m`
 - `daily_flat_oi_buildup`
+- `breakout_watch`
+- `breakdown_watch`
 
 ## 输出行为
 

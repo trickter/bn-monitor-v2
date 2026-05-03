@@ -5,26 +5,12 @@ from copy import deepcopy
 from typing import Any
 
 from monitor.alerts.delivery import evaluate_discord_delivery
-from monitor.alerts.rules import (
-    AlertDecision,
-    IndicatorContext,
-    evaluate_breakdown_watch,
-    evaluate_breakout_watch,
-    evaluate_daily_flat_oi_buildup,
-    evaluate_flat_oi_buildup_15m,
-)
+from monitor.alerts.rules import RULE_REGISTRY
 from monitor.config import Settings
+from monitor.indicators import IndicatorContext
 
 
-RULE_EVALUATORS = (
-    evaluate_flat_oi_buildup_15m,
-    evaluate_daily_flat_oi_buildup,
-    evaluate_breakout_watch,
-    evaluate_breakdown_watch,
-)
-
-
-def alert_decision_to_values(settings: Settings, decision: AlertDecision) -> dict[str, Any]:
+def alert_decision_to_values(settings: Settings, decision) -> dict[str, Any]:
     delivery = evaluate_discord_delivery(settings, decision.alert_type, decision.severity)
     payload = deepcopy(decision.payload)
     if delivery.suppressed_reason is not None:
@@ -53,7 +39,7 @@ class AlertEngine:
     def evaluate(self, snapshots: Iterable[IndicatorContext]) -> list[dict[str, Any]]:
         alert_values = []
         for snapshot in snapshots:
-            for evaluator in RULE_EVALUATORS:
+            for evaluator in RULE_REGISTRY:
                 decision = evaluator(snapshot)
                 if decision is None:
                     continue

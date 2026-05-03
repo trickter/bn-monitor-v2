@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from monitor.alerts.rules import IndicatorContext
+from monitor.indicators import IndicatorContext
 from monitor.config import Settings
 
 

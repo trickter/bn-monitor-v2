@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from monitor.alerts.rules import IndicatorContext
+from monitor.indicators import IndicatorContext
 from monitor.app import generate_and_persist_alerts
 from monitor.config import Settings
 

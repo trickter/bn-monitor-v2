@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from sqlalchemy.orm import Session
 
 from monitor.alerts.engine import AlertEngine
-from monitor.alerts.rules import IndicatorContext
+from monitor.indicators import IndicatorContext
 from monitor.binance.rest import BinanceRestClient
 from monitor.config import Settings
 from monitor.discord import format_alert_message, send_discord_message
