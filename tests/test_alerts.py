@@ -224,7 +224,7 @@ def test_breakout_watch_triggers_warning() -> None:
 def test_breakout_watch_triggers_when_near_24h_high() -> None:
     decision = evaluate_breakout_watch(
         breakout_snapshot(
-            distance_to_high_1h_bps=Decimal("80"),
+            distance_to_high_1h_bps=Decimal("251"),
             distance_to_high_24h_bps=Decimal("45"),
         )
     )
@@ -237,8 +237,8 @@ def test_breakout_watch_does_not_trigger_when_not_near_high() -> None:
     assert (
         evaluate_breakout_watch(
             breakout_snapshot(
-                distance_to_high_1h_bps=Decimal("81"),
-                distance_to_high_24h_bps=Decimal("90"),
+                distance_to_high_1h_bps=Decimal("251"),
+                distance_to_high_24h_bps=Decimal("260"),
             )
         )
         is None
@@ -246,7 +246,7 @@ def test_breakout_watch_does_not_trigger_when_not_near_high() -> None:
 
 
 def test_breakout_watch_does_not_trigger_without_volume_confirmation() -> None:
-    assert evaluate_breakout_watch(breakout_snapshot(volume_robust_z_5m=Decimal("2.49"))) is None
+    assert evaluate_breakout_watch(breakout_snapshot(volume_robust_z_5m=Decimal("1.99"))) is None
 
 
 def test_breakout_watch_does_not_trigger_with_weak_taker_buy() -> None:
@@ -285,7 +285,7 @@ def test_breakdown_watch_triggers_warning() -> None:
 
 def test_breakdown_watch_triggers_when_only_24h_low_is_near() -> None:
     decision = evaluate_breakdown_watch(
-        breakdown_snapshot(distance_to_low_1h_bps=Decimal("70"), distance_to_low_24h_bps=Decimal("45"))
+        breakdown_snapshot(distance_to_low_1h_bps=Decimal("251"), distance_to_low_24h_bps=Decimal("45"))
     )
 
     assert isinstance(decision, AlertDecision)
@@ -294,14 +294,14 @@ def test_breakdown_watch_triggers_when_only_24h_low_is_near() -> None:
 
 def test_breakdown_watch_does_not_trigger_when_not_near_low() -> None:
     decision = evaluate_breakdown_watch(
-        breakdown_snapshot(distance_to_low_1h_bps=Decimal("81"), distance_to_low_24h_bps=Decimal("90"))
+        breakdown_snapshot(distance_to_low_1h_bps=Decimal("251"), distance_to_low_24h_bps=Decimal("260"))
     )
 
     assert decision is None
 
 
 def test_breakdown_watch_does_not_trigger_without_volume_expansion() -> None:
-    assert evaluate_breakdown_watch(breakdown_snapshot(volume_robust_z_5m=Decimal("2.49"))) is None
+    assert evaluate_breakdown_watch(breakdown_snapshot(volume_robust_z_5m=Decimal("1.99"))) is None
 
 
 def test_breakdown_watch_does_not_trigger_with_weak_taker_sell() -> None:

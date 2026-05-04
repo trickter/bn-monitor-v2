@@ -82,17 +82,17 @@ Discord 只允许在 UTC `00:00-00:59` 这个小时投递，并按 UTC 日期去
 触发条件：
 
 ```text
-distance_to_high_1h_bps <= 80 OR distance_to_high_24h_bps <= 80
+distance_to_high_1h_bps <= 250 OR distance_to_high_24h_bps <= 250
 AND range_compression_15m <= 0.70
 AND oi_change_15m > 0
-AND volume_robust_z_5m >= 2.5
+AND volume_robust_z_5m >= 2
 AND taker_buy_ratio_5m >= 0.60
 AND market_relative_return_5m >= 0
 AND baseline_ready == true
 AND is_altcoin == true
 ```
 
-`near_high_bps=80` 给 watch 信号留出临界观察空间；`volume_z_min=2.5` 比 3.0 更适合作为观察信号，而不是确认信号。
+`near_high_bps=250` 给 watch 信号留出临界观察空间；`volume_z_min=2` 比 3.0 更适合作为观察信号，而不是确认信号。
 
 输出：
 
@@ -109,10 +109,10 @@ AND is_altcoin == true
 触发条件：
 
 ```text
-distance_to_low_1h_bps <= 80 OR distance_to_low_24h_bps <= 80
+distance_to_low_1h_bps <= 250 OR distance_to_low_24h_bps <= 250
 AND range_compression_15m <= 0.70
 AND oi_change_15m > 0
-AND volume_robust_z_5m >= 2.5
+AND volume_robust_z_5m >= 2
 AND taker_sell_ratio_5m >= 0.60
 AND market_relative_return_5m <= 0
 AND baseline_ready == true
