@@ -20,6 +20,7 @@ The project uses explicit `.env` configuration. Unknown keys fail startup so typ
 | `VOLUME_PERCENTILE_THRESHOLD` | `0.95` | `0` to `1` | Reserved volume percentile threshold. |
 | `VOLUME_ROBUST_Z_THRESHOLD` | `3.0` | Positive number | Reserved volume robust-z threshold. |
 | `ALERT_COOLDOWN_MINUTES` | `10` | Positive integer | Default alert cooldown minutes. |
+| `DAILY_FLAT_OI_COOLDOWN_MINUTES` | `1440` | Positive integer | Discord delivery cooldown for `daily_flat_oi_buildup`. Alert rows are still generated and persisted. |
 | `MONITOR_POLL_INTERVAL_SECONDS` | `300` | Positive integer | Continuous runner sleep interval between REST polling cycles. |
 | `RULE_THRESHOLDS` | `{}` | JSON object | Per-rule threshold overrides. Empty or `{}` uses built-in defaults. |
 
@@ -34,6 +35,8 @@ AND alert_type in DISCORD_ALERT_TYPE_ALLOWLIST if configured
 ```
 
 If a check fails, the alert is still generated and persisted with `delivery_status=suppressed`.
+
+`daily_flat_oi_buildup` has an additional delivery cooldown controlled by `DAILY_FLAT_OI_COOLDOWN_MINUTES`, defaulting to 1440 minutes. It is only eligible for Discord delivery during UTC hour `0`; outside that hour, generated alerts are persisted with `delivery_status=suppressed`.
 
 ## RULE_THRESHOLDS
 
@@ -103,4 +106,5 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 - Invalid enum values fail startup.
 - `UNIVERSE_MODE=explicit` with empty `SYMBOLS` fails startup.
 - `MONITOR_POLL_INTERVAL_SECONDS` must be positive.
+- `DAILY_FLAT_OI_COOLDOWN_MINUTES` must be positive.
 - Discord allowlist covers unset, hit, miss, severity below minimum, and shadow mode.

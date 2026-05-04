@@ -78,7 +78,7 @@ def market_symbol_data(
     return_5m: Decimal,
     taker_buy_ratio: Decimal,
 ) -> SimpleNamespace:
-    start = datetime(2026, 5, 3, tzinfo=UTC)
+    start = datetime(2026, 5, 2, 23, 59, tzinfo=UTC)
     final_close = Decimal("101")
     first_last_5_close = final_close / (Decimal("1") + return_5m)
     klines = []

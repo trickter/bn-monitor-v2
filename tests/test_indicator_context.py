@@ -27,7 +27,7 @@ REQUIRED_FIELDS_WHEN_READY = {
 
 
 def synthetic_klines(symbol: str = "ALTUSDT", return_5m: Decimal = Decimal("0.02")) -> list[dict]:
-    start = datetime(2026, 5, 3, tzinfo=UTC)
+    start = datetime(2026, 5, 2, 23, 59, tzinfo=UTC)
     rows = []
     for i in range(1441):
         close = Decimal("100") + Decimal(i % 20) / Decimal("100")
@@ -56,7 +56,7 @@ def synthetic_klines(symbol: str = "ALTUSDT", return_5m: Decimal = Decimal("0.02
 
 
 def synthetic_open_interest(symbol: str = "ALTUSDT") -> list[dict]:
-    start = datetime(2026, 5, 3, tzinfo=UTC)
+    start = datetime(2026, 5, 2, 23, 59, tzinfo=UTC)
     return [
         {
             "ts": start + timedelta(minutes=i * 5),
@@ -85,6 +85,8 @@ def test_build_indicator_context_fills_per_symbol_fields() -> None:
 
     assert context.baseline_ready is True
     assert context.is_altcoin is True
+    assert context.return_24h == (klines[-1]["close"] - klines[1]["close"]) / klines[1]["close"]
+    assert context.oi_change_24h == (open_interest[-1]["open_interest"] - open_interest[1]["open_interest"]) / open_interest[1]["open_interest"]
     assert context.return_15m == (klines[-1]["close"] - klines[-15]["close"]) / klines[-15]["close"]
     assert context.oi_change_15m == (open_interest[-1]["open_interest"] - open_interest[-3]["open_interest"]) / open_interest[-3]["open_interest"]
     assert context.distance_to_high_1h_bps is not None
@@ -95,6 +97,45 @@ def test_build_indicator_context_fills_per_symbol_fields() -> None:
     assert context.volume_robust_z_5m is not None
     assert context.taker_buy_ratio_5m == Decimal("0.65")
     assert context.taker_sell_ratio_5m == Decimal("0.35")
+
+
+def test_daily_metrics_prefer_completed_utc_day_boundaries() -> None:
+    start = datetime(2026, 5, 3, tzinfo=UTC)
+    klines = []
+    for i in range(1447):
+        close = Decimal("100") + Decimal(i) / Decimal("100")
+        klines.append(
+            {
+                "ts": start + timedelta(minutes=i),
+                "symbol": "ALTUSDT",
+                "open": close,
+                "high": close + Decimal("0.10"),
+                "low": close - Decimal("0.10"),
+                "close": close,
+                "base_volume": Decimal("10"),
+                "quote_volume": Decimal("1000") + Decimal(i % 17),
+                "trade_count": 10,
+                "taker_buy_base_volume": Decimal("6.5"),
+                "taker_buy_quote_volume": Decimal("650"),
+            }
+        )
+    open_interest = [
+        {
+            "ts": start + timedelta(minutes=i * 5),
+            "symbol": "ALTUSDT",
+            "open_interest": Decimal("1000") + Decimal(i),
+            "open_interest_value": Decimal("100000") + Decimal(i) * Decimal("100"),
+            "period": "5m",
+            "source": "openInterestHist",
+        }
+        for i in range(290)
+    ]
+
+    context = build_indicator_context("ALTUSDT", klines, open_interest)
+
+    assert klines[-1]["ts"] == datetime(2026, 5, 4, 0, 6, tzinfo=UTC)
+    assert context.return_24h == (klines[1440]["close"] - klines[0]["close"]) / klines[0]["close"]
+    assert context.oi_change_24h == (open_interest[288]["open_interest"] - open_interest[0]["open_interest"]) / open_interest[0]["open_interest"]
 
 
 def test_build_indicator_contexts_computes_market_relative_return_5m() -> None:

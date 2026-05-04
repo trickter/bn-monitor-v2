@@ -15,8 +15,8 @@ live smoke 使用 Binance USD-M Futures public REST 的 1m K 线和 5m OI 历史
 
 | 字段 | 口径 |
 |---|---|
-| `return_24h` | `(last_close - first_close) / first_close`，使用拉取窗口首尾 close。 |
-| `oi_change_24h` | `(last_oi - first_oi) / first_oi`，使用拉取窗口首尾 5m OI。 |
+| `return_24h` | UTC 日线口径：UTC 0 点附近优先使用上一完整 UTC 日 `00:00 -> 00:00`；其它时间用于 shadow 复盘时回退为当日 `00:00 -> latest`。 |
+| `oi_change_24h` | 与 `return_24h` 相同的 UTC 边界口径，使用 5m OI。 |
 | `return_15m` | 近 15 根 1m K 线累计：`(last_close - first_close) / first_close`。 |
 | `oi_change_15m` | 近 3 根 5m OI：`(last_oi - first_oi) / first_oi`，少于 3 根为 `None`。 |
 | `range_compression_15m` | 最近 15m 振幅 `(max(high)-min(low))/first_open` 除以近 96 个 15m disjoint 窗口振幅中位数。 |
@@ -72,6 +72,8 @@ AND is_altcoin == true
 - `direction=none`
 - `signal_window=24h`
 - `confirmation_window=24h`
+
+Discord 投递默认冷却 24 小时，由 `DAILY_FLAT_OI_COOLDOWN_MINUTES=1440` 控制，并且只允许在 UTC `00:00-00:59` 这个小时投递。冷却和投递窗口只影响 Discord，不影响告警生成和落库。
 
 ## breakout_watch
 

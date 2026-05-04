@@ -4,9 +4,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from monitor.models import Alert, FuturesKline1m, FuturesOpenInterest, Symbol
+from monitor.models import Alert, AlertCooldown, FuturesKline1m, FuturesOpenInterest, Symbol
 
 
 SYMBOL_UPDATE_COLUMNS = (
@@ -38,6 +39,13 @@ OPEN_INTEREST_UPDATE_COLUMNS = (
     "open_interest",
     "open_interest_value",
     "source",
+)
+
+ALERT_COOLDOWN_UPDATE_COLUMNS = (
+    "last_sent_at",
+    "last_score",
+    "count_1h",
+    "updated_at",
 )
 
 
@@ -84,3 +92,19 @@ def build_insert_alert_once_statement(values: Mapping[str, Any]):
 
 def insert_alert_once(session: Session, values: Mapping[str, Any]) -> None:
     session.execute(build_insert_alert_once_statement(values))
+
+
+def get_alert_cooldown(session: Session, key: str) -> AlertCooldown | None:
+    return session.execute(select(AlertCooldown).where(AlertCooldown.key == key)).scalar_one_or_none()
+
+
+def build_upsert_alert_cooldown_statement(values: Mapping[str, Any]):
+    stmt = insert(AlertCooldown).values(**values)
+    return stmt.on_conflict_do_update(
+        index_elements=["key"],
+        set_={column: getattr(stmt.excluded, column) for column in ALERT_COOLDOWN_UPDATE_COLUMNS if column in values},
+    )
+
+
+def upsert_alert_cooldown(session: Session, values: Mapping[str, Any]) -> None:
+    session.execute(build_upsert_alert_cooldown_statement(values))

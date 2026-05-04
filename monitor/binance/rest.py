@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from statistics import median
 from typing import Any
@@ -37,7 +37,7 @@ class BinanceRestClient:
         self.settings = settings
         self.client = client or httpx.Client(base_url=settings.binance_rest_url, timeout=20)
 
-    def fetch_klines_1m(self, symbol: str, limit: int = 1441) -> list[dict[str, Any]]:
+    def fetch_klines_1m(self, symbol: str, limit: int = 1500) -> list[dict[str, Any]]:
         response = self.client.get("/fapi/v1/klines", params={"symbol": symbol.upper(), "interval": "1m", "limit": limit})
         response.raise_for_status()
         rows = response.json()
@@ -45,7 +45,7 @@ class BinanceRestClient:
             raise BinanceRestError("unexpected kline response")
         return [parse_rest_kline(symbol, row) for row in rows]
 
-    def fetch_open_interest_5m(self, symbol: str, limit: int = 288) -> list[dict[str, Any]]:
+    def fetch_open_interest_5m(self, symbol: str, limit: int = 300) -> list[dict[str, Any]]:
         response = self.client.get(
             "/futures/data/openInterestHist",
             params={"symbol": symbol.upper(), "period": "5m", "limit": limit},
@@ -107,6 +107,34 @@ def _window_return(klines: list[dict[str, Any]]) -> Decimal | None:
     if len(klines) < 2:
         return None
     return _safe_ratio(klines[-1]["close"] - klines[0]["close"], klines[0]["close"])
+
+
+def _utc_day_start(ts: datetime) -> datetime:
+    return datetime.combine(ts.astimezone(UTC).date(), time.min, tzinfo=UTC)
+
+
+def _window_since(rows: list[dict[str, Any]], start_ts: datetime) -> list[dict[str, Any]]:
+    return [row for row in rows if row["ts"] >= start_ts]
+
+
+def _first_at_or_after(rows: list[dict[str, Any]], boundary: datetime) -> dict[str, Any] | None:
+    return next((row for row in rows if row["ts"] >= boundary), None)
+
+
+def _utc_day_window(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    latest_day_start = _utc_day_start(rows[-1]["ts"])
+    previous_day_start = latest_day_start - timedelta(days=1)
+    previous_boundary = _first_at_or_after(rows, previous_day_start)
+    current_boundary = _first_at_or_after(rows, latest_day_start)
+    if (
+        previous_boundary is not None
+        and current_boundary is not None
+        and previous_boundary is not current_boundary
+        and previous_boundary["ts"] <= previous_day_start + timedelta(hours=1)
+        and current_boundary["ts"] <= latest_day_start + timedelta(hours=1)
+    ):
+        return [previous_boundary, current_boundary]
+    return _window_since(rows, latest_day_start)
 
 
 def _oi_change(open_interest: list[dict[str, Any]]) -> Decimal | None:
@@ -186,8 +214,8 @@ def build_indicator_context(symbol: str, klines: list[dict[str, Any]], open_inte
         raise BinanceRestError("not enough market data to build indicator context")
 
     last_close = klines[-1]["close"]
-    return_24h = _window_return(klines)
-    oi_change_24h = _oi_change(open_interest)
+    return_24h = _window_return(_utc_day_window(klines))
+    oi_change_24h = _oi_change(_utc_day_window(open_interest))
     return_15m = _window_return(klines[-15:]) if len(klines) >= 15 else None
     oi_change_15m = _oi_change(open_interest[-3:]) if len(open_interest) >= 3 else None
     distance_to_high_1h_bps = _distance_to_high_bps(klines[-60:], last_close) if len(klines) >= 60 else None

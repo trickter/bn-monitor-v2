@@ -7,10 +7,12 @@ from sqlalchemy.dialects import postgresql
 
 from monitor.repository import (
     build_insert_alert_once_statement,
+    build_upsert_alert_cooldown_statement,
     build_upsert_kline_1m_statement,
     build_upsert_open_interest_statement,
     build_upsert_symbol_statement,
     insert_alert_once,
+    upsert_alert_cooldown,
     upsert_kline_1m,
     upsert_open_interest,
     upsert_symbol,
@@ -96,6 +98,16 @@ def open_interest_values() -> dict:
     }
 
 
+def alert_cooldown_values() -> dict:
+    return {
+        "key": "live:SOLUSDT:daily_flat_oi_buildup:discord",
+        "last_sent_at": datetime(2026, 5, 3, 1, 0, tzinfo=timezone.utc),
+        "last_score": Decimal("72"),
+        "count_1h": 1,
+        "updated_at": datetime(2026, 5, 3, 1, 0, tzinfo=timezone.utc),
+    }
+
+
 def test_symbol_upsert_uses_primary_key_conflict_target() -> None:
     sql = compile_sql(build_upsert_symbol_statement(symbol_values()))
 
@@ -119,6 +131,13 @@ def test_alert_insert_is_idempotent_do_nothing() -> None:
     assert "DO UPDATE" not in sql
 
 
+def test_alert_cooldown_upsert_uses_key_conflict_target() -> None:
+    sql = compile_sql(build_upsert_alert_cooldown_statement(alert_cooldown_values()))
+
+    assert "ON CONFLICT (key) DO UPDATE" in sql
+    assert "last_sent_at = excluded.last_sent_at" in sql
+
+
 def test_open_interest_upsert_uses_ts_symbol_period_conflict_target() -> None:
     sql = compile_sql(build_upsert_open_interest_statement(open_interest_values()))
 
@@ -134,5 +153,6 @@ def test_repository_functions_execute_statements() -> None:
     upsert_kline_1m(session, kline_values())
     upsert_open_interest(session, open_interest_values())
     insert_alert_once(session, alert_values())
+    upsert_alert_cooldown(session, alert_cooldown_values())
 
-    assert len(session.executed) == 4
+    assert len(session.executed) == 5

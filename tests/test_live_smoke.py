@@ -27,7 +27,7 @@ class FakeBinanceClient:
 
 
 def synthetic_klines(symbol: str) -> list[dict]:
-    start = datetime(2026, 5, 3, tzinfo=UTC)
+    start = datetime(2026, 5, 2, 23, 59, tzinfo=UTC)
     rows = []
     for i in range(1441):
         close = Decimal("100") + Decimal(i) / Decimal("1440")
@@ -51,7 +51,7 @@ def synthetic_klines(symbol: str) -> list[dict]:
 
 
 def synthetic_open_interest(symbol: str) -> list[dict]:
-    start = datetime(2026, 5, 3, tzinfo=UTC)
+    start = datetime(2026, 5, 2, 23, 59, tzinfo=UTC)
     return [
         {
             "ts": start + timedelta(minutes=i * 5),
@@ -100,8 +100,8 @@ def test_build_indicator_context_computes_return_and_oi_change() -> None:
 
     context = build_indicator_context("SOLUSDT", klines, open_interest)
 
-    assert context.return_24h == Decimal("0.01")
-    assert context.oi_change_24h == Decimal("143.5") / Decimal("1000")
+    assert context.return_24h == (klines[-1]["close"] - klines[1]["close"]) / klines[1]["close"]
+    assert context.oi_change_24h == (open_interest[-1]["open_interest"] - open_interest[1]["open_interest"]) / open_interest[1]["open_interest"]
     assert context.baseline_ready is True
     assert context.is_altcoin is True
 

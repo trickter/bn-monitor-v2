@@ -108,6 +108,7 @@ class Settings(BaseSettings):
     )
     volume_robust_z_threshold: float = Field(3.0, gt=0, validation_alias="VOLUME_ROBUST_Z_THRESHOLD")
     alert_cooldown_minutes: int = Field(10, gt=0, validation_alias="ALERT_COOLDOWN_MINUTES")
+    daily_flat_oi_cooldown_minutes: int = Field(1440, gt=0, validation_alias="DAILY_FLAT_OI_COOLDOWN_MINUTES")
     monitor_poll_interval_seconds: int = Field(300, gt=0, validation_alias="MONITOR_POLL_INTERVAL_SECONDS")
     rule_thresholds_raw: str = Field("{}", validation_alias="RULE_THRESHOLDS")
 
