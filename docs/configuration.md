@@ -20,7 +20,7 @@ The project uses explicit `.env` configuration. Unknown keys fail startup so typ
 | `VOLUME_PERCENTILE_THRESHOLD` | `0.95` | `0` to `1` | Reserved volume percentile threshold. |
 | `VOLUME_ROBUST_Z_THRESHOLD` | `3.0` | Positive number | Reserved volume robust-z threshold. |
 | `ALERT_COOLDOWN_MINUTES` | `10` | Positive integer | Default alert cooldown minutes. |
-| `DAILY_FLAT_OI_COOLDOWN_MINUTES` | `1440` | Positive integer | Discord delivery cooldown for `daily_flat_oi_buildup`. Alert rows are still generated and persisted. |
+| `DAILY_FLAT_OI_COOLDOWN_MINUTES` | `1440` | Positive integer | Documents the once-per-day Discord cadence for `daily_flat_oi_buildup`. Delivery uses UTC calendar-date dedupe to avoid time drift. |
 | `MONITOR_POLL_INTERVAL_SECONDS` | `300` | Positive integer | Continuous runner sleep interval between REST polling cycles. |
 | `RULE_THRESHOLDS` | `{}` | JSON object | Per-rule threshold overrides. Empty or `{}` uses built-in defaults. |
 
@@ -36,7 +36,7 @@ AND alert_type in DISCORD_ALERT_TYPE_ALLOWLIST if configured
 
 If a check fails, the alert is still generated and persisted with `delivery_status=suppressed`.
 
-`daily_flat_oi_buildup` has an additional delivery cooldown controlled by `DAILY_FLAT_OI_COOLDOWN_MINUTES`, defaulting to 1440 minutes. It is only eligible for Discord delivery during UTC hour `0`; outside that hour, generated alerts are persisted with `delivery_status=suppressed`.
+`daily_flat_oi_buildup` is only eligible for Discord delivery during UTC hour `0`. Within that window, the app deduplicates by UTC calendar date, so each `(mode, symbol, alert_type)` can deliver at most once per UTC day. This avoids drift from relative `last_sent_at + 24h` arithmetic. Outside that hour, generated alerts are persisted with `delivery_status=suppressed`.
 
 ## RULE_THRESHOLDS
 

@@ -77,7 +77,7 @@ def alert_values(ts: datetime) -> dict:
     }
 
 
-def test_daily_flat_oi_delivery_cooldown_suppresses_pending_alert(monkeypatch, tmp_path: Path) -> None:
+def test_daily_flat_oi_delivery_cooldown_suppresses_same_utc_date(monkeypatch, tmp_path: Path) -> None:
     settings = settings_from_text(tmp_path, "ALERT_MODE=live\nDAILY_FLAT_OI_COOLDOWN_MINUTES=1440\n")
     sent_at = datetime(2026, 5, 3, 0, 0, tzinfo=UTC)
     values = alert_values(sent_at + timedelta(minutes=30))
@@ -89,7 +89,7 @@ def test_daily_flat_oi_delivery_cooldown_suppresses_pending_alert(monkeypatch, t
 
     assert values["delivery_status"] == "suppressed"
     assert values["payload"]["suppressed_reason"] == COOLDOWN_SUPPRESSED_REASON
-    assert "cooldown_until" in values["payload"]
+    assert values["payload"]["cooldown_utc_date"] == "2026-05-03"
     assert upserts == []
 
 
@@ -112,6 +112,22 @@ def test_daily_flat_oi_delivery_cooldown_records_when_not_active(monkeypatch, tm
             "updated_at": values["ts"],
         }
     ]
+
+
+def test_daily_flat_oi_delivery_does_not_drift_after_late_previous_day_send(monkeypatch, tmp_path: Path) -> None:
+    settings = settings_from_text(tmp_path, "ALERT_MODE=live\nDAILY_FLAT_OI_COOLDOWN_MINUTES=1440\n")
+    values = alert_values(datetime(2026, 5, 4, 0, 0, tzinfo=UTC))
+    monkeypatch.setattr(
+        "monitor.app.get_alert_cooldown",
+        lambda session, key: SimpleNamespace(last_sent_at=datetime(2026, 5, 3, 0, 55, tzinfo=UTC)),
+    )
+    upserts = []
+    monkeypatch.setattr("monitor.app.upsert_alert_cooldown", lambda session, row: upserts.append(row))
+
+    apply_delivery_cooldown(settings, FakeSession(), values)
+
+    assert values["delivery_status"] == "pending"
+    assert upserts[0]["last_sent_at"] == datetime(2026, 5, 4, 0, 0, tzinfo=UTC)
 
 
 def test_daily_flat_oi_delivery_is_suppressed_outside_utc_zero_hour(monkeypatch, tmp_path: Path) -> None:

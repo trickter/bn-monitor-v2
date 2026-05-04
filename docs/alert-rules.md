@@ -73,7 +73,7 @@ AND is_altcoin == true
 - `signal_window=24h`
 - `confirmation_window=24h`
 
-Discord 投递默认冷却 24 小时，由 `DAILY_FLAT_OI_COOLDOWN_MINUTES=1440` 控制，并且只允许在 UTC `00:00-00:59` 这个小时投递。冷却和投递窗口只影响 Discord，不影响告警生成和落库。
+Discord 只允许在 UTC `00:00-00:59` 这个小时投递，并按 UTC 日期去重：同一 `(mode, symbol, alert_type)` 每个 UTC 日期最多投递一次。`DAILY_FLAT_OI_COOLDOWN_MINUTES=1440` 表达默认的一天一次节奏，但实现不使用 `last_sent_at + 24h`，避免投递时间逐日漂移。冷却和投递窗口只影响 Discord，不影响告警生成和落库。
 
 ## breakout_watch
 

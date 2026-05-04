@@ -19,7 +19,7 @@ Binance Futures Public Data
 本项目为币安二级市场 altcoin 指标异动监控告警项目，开发时请遵循：
 
 1. **规则优先**：先从 `/rules` 了解项目架构、开发规范等。
-2. **文档同步**：功能级新增或修改前，先在 `/plans` 中输出实施计划（计划文件名包含 `序号-状态-计划总结`），再更新 `/docs`，再修改代码，避免文档与代码不一致，最后进行git提交推送到https://github.com/trickter/bn-monitor-v2。
+2. **文档同步**：功能级新增或修改前，先在 `/plans` 中输出实施计划（计划文件名包含 `序号-状态-计划总结`），再更新 `/docs`，再修改代码，避免文档与代码不一致，然后我review之后，你通过git提交推送到https://github.com/trickter/bn-monitor-v2。
 3. **解耦与可扩展**：设计模块化，单文件建议不超过700行。
 4. **代码修改原则**：遵循以下 **Surgical Changes** 和 **Simplicity First**。
 5. **测试优先**：任何功能修改或新增必须有可验证测试。

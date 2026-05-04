@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import UTC, timedelta
+from datetime import UTC
 
 from sqlalchemy.orm import Session
 
@@ -31,12 +31,6 @@ def generate_and_persist_alerts(
     return len(alert_values)
 
 
-def _delivery_cooldown_minutes(settings: Settings, alert_type: str) -> int | None:
-    if alert_type == "daily_flat_oi_buildup":
-        return settings.daily_flat_oi_cooldown_minutes
-    return None
-
-
 def _delivery_cooldown_key(values: dict) -> str:
     return f"{values['mode']}:{values['symbol']}:{values['alert_type']}:discord"
 
@@ -47,6 +41,10 @@ def _inside_delivery_window(values: dict) -> bool:
     return values["ts"].astimezone(UTC).hour == DAILY_FLAT_OI_DELIVERY_UTC_HOUR
 
 
+def _same_utc_date(left, right) -> bool:
+    return left.astimezone(UTC).date() == right.astimezone(UTC).date()
+
+
 def apply_delivery_cooldown(settings: Settings, session: Session, values: dict) -> None:
     if values["delivery_status"] != "pending":
         return
@@ -55,17 +53,16 @@ def apply_delivery_cooldown(settings: Settings, session: Session, values: dict) 
         values["payload"]["suppressed_reason"] = DAILY_FLAT_OI_WINDOW_SUPPRESSED_REASON
         values["payload"]["delivery_utc_hour"] = DAILY_FLAT_OI_DELIVERY_UTC_HOUR
         return
-    cooldown_minutes = _delivery_cooldown_minutes(settings, values["alert_type"])
-    if cooldown_minutes is None:
+
+    if values["alert_type"] != "daily_flat_oi_buildup":
         return
 
     key = _delivery_cooldown_key(values)
     cooldown = get_alert_cooldown(session, key)
-    cooldown_until = None if cooldown is None else cooldown.last_sent_at + timedelta(minutes=cooldown_minutes)
-    if cooldown_until is not None and values["ts"] < cooldown_until:
+    if cooldown is not None and _same_utc_date(cooldown.last_sent_at, values["ts"]):
         values["delivery_status"] = "suppressed"
         values["payload"]["suppressed_reason"] = COOLDOWN_SUPPRESSED_REASON
-        values["payload"]["cooldown_until"] = cooldown_until.isoformat()
+        values["payload"]["cooldown_utc_date"] = values["ts"].astimezone(UTC).date().isoformat()
         return
 
     upsert_alert_cooldown(
