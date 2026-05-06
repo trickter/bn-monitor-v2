@@ -25,6 +25,15 @@ class IndicatorContext:
     taker_buy_ratio_5m: Decimal | None = None
     taker_sell_ratio_5m: Decimal | None = None
     market_relative_return_5m: Decimal | None = None
+    return_7d: Decimal | None = None
+    range_position_7d: Decimal | None = None
+    last_up_leg_return: Decimal | None = None
+    pullback_from_high: Decimal | None = None
+    pullback_retrace_ratio: Decimal | None = None
+    low_vs_ema20_4h: Decimal | None = None
+    low_vs_ema50_4h: Decimal | None = None
+    pullback_bars_4h: Decimal | None = None
+    pullback_structure_payload: dict[str, str | None] | None = None
 
 
 @dataclass(frozen=True)

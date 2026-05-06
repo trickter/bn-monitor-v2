@@ -127,6 +127,64 @@ AND is_altcoin == true
 - `signal_window=15m`
 - `confirmation_window=1h`
 
+## long_pullback_reclaim_watch
+
+用途：观察 altcoin 在 4h 多头结构中的健康回调后，是否出现 5m / 15m 重新走强压力。该规则不输出入场、买入或确认延续建议。
+
+结构层触发条件：
+```text
+baseline_ready == true
+AND is_altcoin == true
+AND return_7d >= 0.08
+AND range_position_7d >= 0.55
+AND last_up_leg_return >= 0.15
+AND 0.382 <= pullback_retrace_ratio <= 0.764
+AND 0.08 <= pullback_from_high <= 0.38
+AND -0.05 <= low_vs_ema20_4h <= 0.03
+AND low_vs_ema50_4h >= -0.08
+AND 3 <= pullback_bars_4h <= 24
+```
+
+确认层触发条件：
+```text
+AND return_15m >= 0
+AND market_relative_return_5m >= 0
+AND volume_robust_z_5m >= 2
+AND taker_buy_ratio_5m >= 0.60
+AND oi_change_15m > 0
+```
+
+输出：
+- `alert_type=long_pullback_reclaim_watch`
+- `severity=WARNING`
+- `direction=up`
+- `signal_window=4h/7d`
+- `confirmation_window=5m/15m`
+
+Required payload keys:
+```json
+{
+  "symbol": "SOLUSDT",
+  "signal_window": "4h/7d",
+  "confirmation_window": "5m/15m",
+  "return_7d": "0.12",
+  "range_position_7d": "0.62",
+  "last_up_leg_return": "0.20",
+  "pullback_from_high": "0.12",
+  "pullback_retrace_ratio": "0.50",
+  "low_vs_ema20_4h": "-0.02",
+  "low_vs_ema50_4h": "0.01",
+  "pullback_bars_4h": "6",
+  "ema20_4h": "100.0",
+  "ema50_4h": "95.0",
+  "recent_swing_high_4h": "110.0",
+  "recent_swing_low_4h": "90.0",
+  "bars_since_high": "6",
+  "confirmations": [],
+  "trigger_conditions": []
+}
+```
+
 ## RULE_THRESHOLDS
 
 `.env` 可用 `RULE_THRESHOLDS` 覆盖默认阈值。格式为两层 JSON：

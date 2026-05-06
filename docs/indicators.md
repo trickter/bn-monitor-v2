@@ -33,6 +33,17 @@
 | `taker_buy_ratio_5m` | Decimal \| None | 5m 主动买入占比 |
 | `taker_sell_ratio_5m` | Decimal \| None | 5m 主动卖出占比 |
 | `market_relative_return_5m` | Decimal \| None | 5m 相对市场超额收益 |
+| `return_7d` | Decimal \| None | 7d price return using closed 4h structure and latest closed 1m close |
+| `range_position_7d` | Decimal \| None | Current close position inside the latest 7d 4h high-low range |
+| `last_up_leg_return` | Decimal \| None | 60-candle 4h swing low to swing high return |
+| `pullback_from_high` | Decimal \| None | Current close drawdown from the 60-candle 4h swing high |
+| `pullback_retrace_ratio` | Decimal \| None | Current pullback as a share of the previous 4h up leg |
+| `low_vs_ema20_4h` | Decimal \| None | Current close relative to 4h EMA20 |
+| `low_vs_ema50_4h` | Decimal \| None | Current close relative to 4h EMA50 |
+| `pullback_bars_4h` | Decimal \| None | Number of closed 4h candles since the swing high |
+| `pullback_structure_payload` | dict \| None | Payload-only 4h values such as EMA and swing prices for replay |
+
+4h pullback fields are `None` when fewer than 60 closed 4h candles are available, EMA50 cannot be calculated, or a required denominator is zero. Rules must not trigger when any required 4h structure field is missing.
 
 ## AlertDecision
 

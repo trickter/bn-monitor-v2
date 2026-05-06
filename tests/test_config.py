@@ -96,10 +96,23 @@ def test_rule_thresholds_default_is_empty(tmp_path: Path) -> None:
 def test_rule_thresholds_parses_valid_json(tmp_path: Path) -> None:
     from decimal import Decimal
 
-    env_file = write_env(tmp_path, 'RULE_THRESHOLDS={"flat_oi_buildup_15m": {"return_limit": "0.01"}}\n')
+    env_file = write_env(
+        tmp_path,
+        'RULE_THRESHOLDS={"flat_oi_buildup_15m": {"return_limit": "0.01"}, "long_pullback_reclaim_watch": {"volume_z_min": "2.2"}}\n',
+    )
     settings = settings_from_env(env_file)
 
-    assert settings.rule_thresholds == {"flat_oi_buildup_15m": {"return_limit": Decimal("0.01")}}
+    assert settings.rule_thresholds == {
+        "flat_oi_buildup_15m": {"return_limit": Decimal("0.01")},
+        "long_pullback_reclaim_watch": {"volume_z_min": Decimal("2.2")},
+    }
+
+
+def test_discord_allowlist_accepts_long_pullback_reclaim_watch(tmp_path: Path) -> None:
+    env_file = write_env(tmp_path, "DISCORD_ALERT_TYPE_ALLOWLIST=long_pullback_reclaim_watch\n")
+    settings = settings_from_env(env_file)
+
+    assert settings.discord_alert_type_allowlist == ("long_pullback_reclaim_watch",)
 
 
 def test_rule_thresholds_rejects_unknown_alert_type(tmp_path: Path) -> None:

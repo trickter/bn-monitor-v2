@@ -8,6 +8,7 @@ from typing import Sequence
 from pydantic import ValidationError
 
 from monitor.app import run_live_smoke
+from monitor.binance.rest import BinanceRestClient
 from monitor.config import load_settings
 from monitor.db import build_engine, build_session_factory, session_scope
 from monitor.discord import DiscordDeliveryError, send_discord_message
@@ -72,9 +73,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.exit(2, "--poll-interval-seconds must be a positive integer\n")
         engine = build_engine(settings)
         session_factory = build_session_factory(engine)
+        binance_client = BinanceRestClient(settings)
         while True:
             with session_scope(session_factory) as session:
-                result = run_live_smoke(settings, session, symbols, send_discord=not args.no_discord)
+                result = run_live_smoke(
+                    settings,
+                    session,
+                    symbols,
+                    binance_client=binance_client,
+                    send_discord=not args.no_discord,
+                )
             print(json.dumps(result["summary"], indent=2, sort_keys=True), flush=True)
             if args.once:
                 return 0

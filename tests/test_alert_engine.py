@@ -72,6 +72,37 @@ def breakdown_snapshot() -> IndicatorContext:
     )
 
 
+def long_pullback_snapshot() -> IndicatorContext:
+    return IndicatorContext(
+        ts=datetime(2026, 5, 3, 1, 2, tzinfo=UTC),
+        symbol="SOLUSDT",
+        return_24h=None,
+        oi_change_24h=None,
+        baseline_ready=True,
+        is_altcoin=True,
+        return_15m=Decimal("0.01"),
+        oi_change_15m=Decimal("0.02"),
+        volume_robust_z_5m=Decimal("2.5"),
+        taker_buy_ratio_5m=Decimal("0.62"),
+        market_relative_return_5m=Decimal("0.002"),
+        return_7d=Decimal("0.10"),
+        range_position_7d=Decimal("0.60"),
+        last_up_leg_return=Decimal("0.20"),
+        pullback_from_high=Decimal("0.12"),
+        pullback_retrace_ratio=Decimal("0.50"),
+        low_vs_ema20_4h=Decimal("-0.02"),
+        low_vs_ema50_4h=Decimal("0.01"),
+        pullback_bars_4h=Decimal("6"),
+        pullback_structure_payload={
+            "ema20_4h": "110",
+            "ema50_4h": "105",
+            "recent_swing_high_4h": "120",
+            "recent_swing_low_4h": "100",
+            "bars_since_high": "6",
+        },
+    )
+
+
 def market_symbol_data(
     symbol: str,
     *,
@@ -222,6 +253,35 @@ def test_engine_generates_breakdown_watch_values(tmp_path: Path) -> None:
     assert values[0]["direction"] == "down"
     assert values[0]["payload"]["signal_window"] == "15m"
     assert values[0]["delivery_status"] == "pending"
+
+
+def test_engine_generates_long_pullback_reclaim_watch_values(tmp_path: Path) -> None:
+    engine = AlertEngine(settings_from_text(tmp_path, "ALERT_MODE=live\n"))
+
+    values = engine.evaluate([long_pullback_snapshot()])
+
+    assert len(values) == 1
+    assert values[0]["alert_type"] == "long_pullback_reclaim_watch"
+    assert values[0]["severity"] == "WARNING"
+    assert values[0]["direction"] == "up"
+    assert values[0]["payload"]["signal_window"] == "4h/7d"
+    assert values[0]["payload"]["confirmation_window"] == "5m/15m"
+    for key in {
+        "return_7d",
+        "range_position_7d",
+        "last_up_leg_return",
+        "pullback_from_high",
+        "pullback_retrace_ratio",
+        "low_vs_ema20_4h",
+        "low_vs_ema50_4h",
+        "pullback_bars_4h",
+        "ema20_4h",
+        "ema50_4h",
+        "recent_swing_high_4h",
+        "recent_swing_low_4h",
+        "bars_since_high",
+    }:
+        assert key in values[0]["payload"]
 
 
 def test_engine_generates_all_four_rules_from_produced_indicator_contexts(tmp_path: Path) -> None:

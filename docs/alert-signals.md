@@ -16,6 +16,7 @@
 | `daily_flat_oi_buildup` | 24h | WARNING | 当天涨跌幅收敛但 OI 明显增长 |
 | `breakout_watch` | 15m / 1h | WARNING | 接近近期上沿，疑似向上突破前兆 |
 | `breakdown_watch` | 15m / 1h | WARNING | 接近近期下沿，疑似向下跌破前兆 |
+| `long_pullback_reclaim_watch` | 4h / 7d + 5m / 15m | WARNING | 多头结构回调后的重新走强观察 |
 | `long_squeeze_risk` | 5m + 15m | CRITICAL | 多杀多风险 |
 | `short_squeeze_risk` | 5m + 15m | CRITICAL | 逼空风险 |
 
@@ -73,6 +74,25 @@ AND market_relative_return_5m <= 0
 
 `breakdown_watch` 不表示已经跌破。确认跌破应在后续版本中使用独立的 `breakdown_confirmed`。
 
+## long_pullback_reclaim_watch
+
+用途：观察 altcoin 在 4h 多头结构中的健康回调后，是否出现 5m / 15m 重新走强压力。
+
+MVP 条件：
+```text
+4h / 7d 结构保持多头
+AND 回调深度与上一段上涨回吐比例处于健康区间
+AND 价格未明显深破 4h EMA20 / EMA50
+AND 回调持续时间不过短也不过久
+AND return_15m >= 0
+AND market_relative_return_5m >= 0
+AND volume_robust_z_5m >= 2
+AND taker_buy_ratio_5m >= 0.60
+AND oi_change_15m > 0
+```
+
+`long_pullback_reclaim_watch` 只是观察信号，不表示入场、买入或趋势已经确认延续。
+
 ## Discord 投递
 
 这些信号可通过 `DISCORD_ALERT_TYPE_ALLOWLIST` 控制是否发送 Discord。
@@ -90,4 +110,5 @@ DISCORD_ALERT_TYPE_ALLOWLIST=daily_flat_oi_buildup,breakout_watch,breakdown_watc
 - `daily_flat_oi_buildup` 覆盖触发、不触发、OI 不足 10%、day return 超出范围、baseline 不足。
 - `breakout_watch` 覆盖接近上沿但无放量、放量但 taker 不强、市场相对收益为负等不触发场景。
 - `breakdown_watch` 覆盖接近下沿但无放量、放量但 taker sell 不强、市场相对收益为正等不触发场景。
+- `long_pullback_reclaim_watch` 覆盖结构不足、回调不健康、5m/15m 确认不足、baseline 不足和字段缺失。
 - watch 类信号不得被文案描述为已经突破或已经跌破。

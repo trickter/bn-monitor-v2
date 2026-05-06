@@ -54,6 +54,7 @@ Available keys:
 | `daily_flat_oi_buildup` | `return_limit`, `oi_buildup_threshold` |
 | `breakout_watch` | `near_high_bps`, `range_compression_max`, `volume_z_min`, `taker_buy_min`, `market_return_min` |
 | `breakdown_watch` | `low_distance_bps`, `range_compression_max`, `volume_z_min`, `taker_sell_min` |
+| `long_pullback_reclaim_watch` | `return_7d_min`, `range_pos_7d_min`, `up_leg_min`, `retrace_min`, `retrace_max`, `pullback_from_high_min`, `pullback_from_high_max`, `ema20_low`, `ema20_high`, `ema50_low`, `pullback_bars_min`, `pullback_bars_max`, `volume_z_min`, `taker_buy_min` |
 
 Unknown alert types, unknown keys, invalid JSON, and non-decimal values fail startup.
 

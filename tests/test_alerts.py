@@ -8,6 +8,7 @@ from monitor.alerts.rules import (
     evaluate_breakout_watch,
     evaluate_daily_flat_oi_buildup,
     evaluate_flat_oi_buildup_15m,
+    evaluate_long_pullback_reclaim_watch,
 )
 from monitor.indicators import AlertDecision, IndicatorContext
 
@@ -88,6 +89,54 @@ def breakdown_snapshot(
         volume_robust_z_5m=volume_robust_z_5m,
         taker_sell_ratio_5m=taker_sell_ratio_5m,
         market_relative_return_5m=market_relative_return_5m,
+    )
+
+
+def long_pullback_snapshot(
+    *,
+    baseline_ready: bool = True,
+    is_altcoin: bool = True,
+    return_7d: Decimal | None = Decimal("0.10"),
+    range_position_7d: Decimal | None = Decimal("0.60"),
+    last_up_leg_return: Decimal | None = Decimal("0.20"),
+    pullback_from_high: Decimal | None = Decimal("0.12"),
+    pullback_retrace_ratio: Decimal | None = Decimal("0.50"),
+    low_vs_ema20_4h: Decimal | None = Decimal("-0.02"),
+    low_vs_ema50_4h: Decimal | None = Decimal("0.01"),
+    pullback_bars_4h: Decimal | None = Decimal("6"),
+    return_15m: Decimal | None = Decimal("0.01"),
+    market_relative_return_5m: Decimal | None = Decimal("0.002"),
+    volume_robust_z_5m: Decimal | None = Decimal("2.5"),
+    taker_buy_ratio_5m: Decimal | None = Decimal("0.62"),
+    oi_change_15m: Decimal | None = Decimal("0.02"),
+) -> IndicatorContext:
+    return IndicatorContext(
+        ts=datetime(2026, 5, 3, 1, 2, tzinfo=UTC),
+        symbol="solusdt",
+        return_24h=None,
+        oi_change_24h=None,
+        baseline_ready=baseline_ready,
+        is_altcoin=is_altcoin,
+        return_15m=return_15m,
+        oi_change_15m=oi_change_15m,
+        volume_robust_z_5m=volume_robust_z_5m,
+        taker_buy_ratio_5m=taker_buy_ratio_5m,
+        market_relative_return_5m=market_relative_return_5m,
+        return_7d=return_7d,
+        range_position_7d=range_position_7d,
+        last_up_leg_return=last_up_leg_return,
+        pullback_from_high=pullback_from_high,
+        pullback_retrace_ratio=pullback_retrace_ratio,
+        low_vs_ema20_4h=low_vs_ema20_4h,
+        low_vs_ema50_4h=low_vs_ema50_4h,
+        pullback_bars_4h=pullback_bars_4h,
+        pullback_structure_payload={
+            "ema20_4h": "110",
+            "ema50_4h": "105",
+            "recent_swing_high_4h": "120",
+            "recent_swing_low_4h": "100",
+            "bars_since_high": "6",
+        },
     )
 
 
@@ -322,6 +371,57 @@ def test_breakdown_watch_does_not_trigger_with_missing_metrics() -> None:
     assert evaluate_breakdown_watch(breakdown_snapshot(volume_robust_z_5m=None)) is None
     assert evaluate_breakdown_watch(breakdown_snapshot(taker_sell_ratio_5m=None)) is None
     assert evaluate_breakdown_watch(breakdown_snapshot(market_relative_return_5m=None)) is None
+
+
+def test_long_pullback_reclaim_watch_triggers_warning() -> None:
+    decision = evaluate_long_pullback_reclaim_watch(long_pullback_snapshot())
+
+    assert isinstance(decision, AlertDecision)
+    assert decision.alert_type == "long_pullback_reclaim_watch"
+    assert decision.severity == "WARNING"
+    assert decision.direction == "up"
+    assert decision.symbol == "SOLUSDT"
+    assert decision.payload["signal_window"] == "4h/7d"
+    assert decision.payload["confirmation_window"] == "5m/15m"
+    assert decision.payload["ema20_4h"] == "110"
+    assert decision.payload["recent_swing_high_4h"] == "120"
+    assert "pullback_retrace_ratio" in decision.payload["confirmations"]
+    assert "volume_robust_z_5m" in decision.payload["confirmations"]
+    assert decision.payload["trigger_conditions"]
+
+
+def test_long_pullback_reclaim_watch_does_not_trigger_without_baseline_or_altcoin() -> None:
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(baseline_ready=False)) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(is_altcoin=False)) is None
+
+
+def test_long_pullback_reclaim_watch_does_not_trigger_with_bad_structure() -> None:
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(return_7d=Decimal("0.079"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(range_position_7d=Decimal("0.54"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(last_up_leg_return=Decimal("0.149"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(pullback_retrace_ratio=Decimal("0.381"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(pullback_retrace_ratio=Decimal("0.765"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(pullback_from_high=Decimal("0.079"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(pullback_from_high=Decimal("0.381"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(low_vs_ema20_4h=Decimal("-0.051"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(low_vs_ema20_4h=Decimal("0.031"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(low_vs_ema50_4h=Decimal("-0.081"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(pullback_bars_4h=Decimal("2"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(pullback_bars_4h=Decimal("25"))) is None
+
+
+def test_long_pullback_reclaim_watch_does_not_trigger_without_reclaim_confirmation() -> None:
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(return_15m=Decimal("-0.001"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(market_relative_return_5m=Decimal("-0.001"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(volume_robust_z_5m=Decimal("1.99"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(taker_buy_ratio_5m=Decimal("0.59"))) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(oi_change_15m=Decimal("0"))) is None
+
+
+def test_long_pullback_reclaim_watch_does_not_trigger_with_missing_metrics() -> None:
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(return_7d=None)) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(pullback_retrace_ratio=None)) is None
+    assert evaluate_long_pullback_reclaim_watch(long_pullback_snapshot(volume_robust_z_5m=None)) is None
 
 
 def test_custom_threshold_changes_flat_oi_15m_trigger() -> None:

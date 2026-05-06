@@ -30,6 +30,24 @@ KNOWN_RULE_THRESHOLDS: dict[str, frozenset[str]] = {
     "daily_flat_oi_buildup": frozenset({"return_limit", "oi_buildup_threshold"}),
     "breakout_watch": frozenset({"near_high_bps", "range_compression_max", "volume_z_min", "taker_buy_min", "market_return_min"}),
     "breakdown_watch": frozenset({"low_distance_bps", "range_compression_max", "volume_z_min", "taker_sell_min"}),
+    "long_pullback_reclaim_watch": frozenset(
+        {
+            "return_7d_min",
+            "range_pos_7d_min",
+            "up_leg_min",
+            "retrace_min",
+            "retrace_max",
+            "pullback_from_high_min",
+            "pullback_from_high_max",
+            "ema20_low",
+            "ema20_high",
+            "ema50_low",
+            "pullback_bars_min",
+            "pullback_bars_max",
+            "volume_z_min",
+            "taker_buy_min",
+        }
+    ),
 }
 
 KNOWN_ALERT_TYPES = frozenset(
@@ -44,6 +62,7 @@ KNOWN_ALERT_TYPES = frozenset(
         "daily_flat_oi_buildup",
         "breakout_watch",
         "breakdown_watch",
+        "long_pullback_reclaim_watch",
         "long_squeeze_risk",
         "short_squeeze_risk",
         "market_digest",

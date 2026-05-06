@@ -22,6 +22,7 @@ class SymbolMarketData:
     klines: list[dict[str, Any]]
     open_interest: list[dict[str, Any]]
     indicator: IndicatorContext
+    klines_4h: list[dict[str, Any]] | None = None
 
 
 def ms_to_utc(ms: int) -> datetime:
@@ -36,6 +37,7 @@ class BinanceRestClient:
     def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
         self.settings = settings
         self.client = client or httpx.Client(base_url=settings.binance_rest_url, timeout=20)
+        self._klines_4h_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
 
     def fetch_klines_1m(self, symbol: str, limit: int = 1500) -> list[dict[str, Any]]:
         response = self.client.get("/fapi/v1/klines", params={"symbol": symbol.upper(), "interval": "1m", "limit": limit})
@@ -44,6 +46,19 @@ class BinanceRestClient:
         if not isinstance(rows, list):
             raise BinanceRestError("unexpected kline response")
         return [parse_rest_kline(symbol, row) for row in rows]
+
+    def fetch_klines_4h(self, symbol: str, limit: int = 80) -> list[dict[str, Any]]:
+        response = self.client.get("/fapi/v1/klines", params={"symbol": symbol.upper(), "interval": "4h", "limit": limit})
+        response.raise_for_status()
+        rows = response.json()
+        if not isinstance(rows, list):
+            raise BinanceRestError("unexpected kline response")
+        parsed = []
+        for row in rows:
+            kline = parse_rest_kline(symbol, row)
+            kline["close_time"] = ms_to_utc(int(row[6]))
+            parsed.append(kline)
+        return parsed
 
     def fetch_open_interest_5m(self, symbol: str, limit: int = 300) -> list[dict[str, Any]]:
         response = self.client.get(
@@ -60,12 +75,25 @@ class BinanceRestClient:
         normalized = symbol.upper()
         klines = self.fetch_klines_1m(normalized)
         open_interest = self.fetch_open_interest_5m(normalized)
+        klines_4h = self._cached_closed_klines_4h(normalized, klines[-1]["ts"])
         return SymbolMarketData(
             symbol=normalized,
             klines=klines,
             open_interest=open_interest,
-            indicator=build_indicator_context(normalized, klines, open_interest),
+            indicator=build_indicator_context(normalized, klines, open_interest, klines_4h),
+            klines_4h=klines_4h,
         )
+
+    def _cached_closed_klines_4h(self, symbol: str, latest_1m_ts: datetime) -> list[dict[str, Any]]:
+        cached = self._klines_4h_cache.get(symbol)
+        if cached is not None:
+            refresh_at, rows = cached
+            if latest_1m_ts < refresh_at:
+                return rows
+
+        rows = _closed_klines_4h(self.fetch_klines_4h(symbol), latest_1m_ts)
+        self._klines_4h_cache[symbol] = (_next_4h_refresh_at(latest_1m_ts), rows)
+        return rows
 
 
 def parse_rest_kline(symbol: str, row: list[Any]) -> dict[str, Any]:
@@ -84,6 +112,21 @@ def parse_rest_kline(symbol: str, row: list[Any]) -> dict[str, Any]:
         "taker_buy_base_volume": decimal_from(row[9]),
         "taker_buy_quote_volume": decimal_from(row[10]),
     }
+
+
+def _closed_klines_4h(klines_4h: list[dict[str, Any]], latest_1m_ts: datetime) -> list[dict[str, Any]]:
+    latest_1m_close = latest_1m_ts + timedelta(minutes=1)
+    return [row for row in klines_4h if row.get("close_time") is not None and row["close_time"] <= latest_1m_close]
+
+
+def _next_4h_refresh_at(ts: datetime) -> datetime:
+    utc_ts = ts.astimezone(UTC)
+    next_hour = (utc_ts.hour // 4 + 1) * 4
+    day = utc_ts.date()
+    if next_hour >= 24:
+        next_hour -= 24
+        day = day + timedelta(days=1)
+    return datetime.combine(day, time(next_hour, 2), tzinfo=UTC)
 
 
 def parse_open_interest(symbol: str, row: dict[str, Any]) -> dict[str, Any]:
@@ -209,11 +252,84 @@ def _taker_buy_ratio_5m(klines: list[dict[str, Any]]) -> Decimal | None:
     return taker_buy_quote / quote_volume
 
 
-def build_indicator_context(symbol: str, klines: list[dict[str, Any]], open_interest: list[dict[str, Any]]) -> IndicatorContext:
+def _ema_with_seed(values: list[Decimal], period: int) -> Decimal | None:
+    if len(values) < period:
+        return None
+    ema = sum(values[:period]) / Decimal(period)
+    alpha = Decimal("2") / Decimal(period + 1)
+    for value in values[period:]:
+        ema = value * alpha + ema * (Decimal("1") - alpha)
+    return ema
+
+
+def _trend_pullback_metrics(klines_4h: list[dict[str, Any]], last_close: Decimal) -> dict[str, Any]:
+    none_metrics: dict[str, Any] = {
+        "return_7d": None,
+        "range_position_7d": None,
+        "last_up_leg_return": None,
+        "pullback_from_high": None,
+        "pullback_retrace_ratio": None,
+        "low_vs_ema20_4h": None,
+        "low_vs_ema50_4h": None,
+        "pullback_bars_4h": None,
+        "payload": None,
+    }
+    if len(klines_4h) < 60:
+        return none_metrics
+
+    candles = klines_4h[-60:]
+    closes = [row["close"] for row in candles]
+    ema20 = _ema_with_seed(closes, 20)
+    ema50 = _ema_with_seed(closes, 50)
+    if ema20 is None or ema50 is None or ema20 == 0 or ema50 == 0:
+        return none_metrics
+
+    swing_high = max(row["high"] for row in candles)
+    high_idx = next(i for i, row in enumerate(candles) if row["high"] == swing_high)
+    swing_low = min(row["low"] for row in candles[: high_idx + 1])
+    up_leg = swing_high - swing_low
+    if swing_low == 0 or swing_high == 0 or up_leg == 0:
+        return none_metrics
+
+    last_7d = candles[-42:]
+    min7d_low = min(row["low"] for row in last_7d)
+    max7d_high = max(row["high"] for row in last_7d)
+    range_7d = max7d_high - min7d_low
+    seven_day_open = candles[-42]["close"]
+    if range_7d == 0 or seven_day_open == 0:
+        return none_metrics
+
+    pullback_bars = len(candles) - high_idx - 1
+    return {
+        "return_7d": _safe_ratio(last_close - seven_day_open, seven_day_open),
+        "range_position_7d": _safe_ratio(last_close - min7d_low, range_7d),
+        "last_up_leg_return": _safe_ratio(up_leg, swing_low),
+        "pullback_from_high": _safe_ratio(swing_high - last_close, swing_high),
+        "pullback_retrace_ratio": _safe_ratio(swing_high - last_close, up_leg),
+        "low_vs_ema20_4h": _safe_ratio(last_close - ema20, ema20),
+        "low_vs_ema50_4h": _safe_ratio(last_close - ema50, ema50),
+        "pullback_bars_4h": Decimal(pullback_bars),
+        "payload": {
+            "ema20_4h": str(ema20),
+            "ema50_4h": str(ema50),
+            "recent_swing_high_4h": str(swing_high),
+            "recent_swing_low_4h": str(swing_low),
+            "bars_since_high": str(pullback_bars),
+        },
+    }
+
+
+def build_indicator_context(
+    symbol: str,
+    klines: list[dict[str, Any]],
+    open_interest: list[dict[str, Any]],
+    klines_4h: list[dict[str, Any]] | None = None,
+) -> IndicatorContext:
     if len(klines) < 2 or len(open_interest) < 2:
         raise BinanceRestError("not enough market data to build indicator context")
 
     last_close = klines[-1]["close"]
+    pullback_metrics = _trend_pullback_metrics(klines_4h or [], last_close)
     return_24h = _window_return(_utc_day_window(klines))
     oi_change_24h = _oi_change(_utc_day_window(open_interest))
     return_15m = _window_return(klines[-15:]) if len(klines) >= 15 else None
@@ -241,12 +357,21 @@ def build_indicator_context(symbol: str, klines: list[dict[str, Any]], open_inte
         volume_robust_z_5m=_volume_robust_z_5m(klines),
         taker_buy_ratio_5m=taker_buy_ratio_5m,
         taker_sell_ratio_5m=None if taker_buy_ratio_5m is None else Decimal("1") - taker_buy_ratio_5m,
+        return_7d=pullback_metrics["return_7d"],
+        range_position_7d=pullback_metrics["range_position_7d"],
+        last_up_leg_return=pullback_metrics["last_up_leg_return"],
+        pullback_from_high=pullback_metrics["pullback_from_high"],
+        pullback_retrace_ratio=pullback_metrics["pullback_retrace_ratio"],
+        low_vs_ema20_4h=pullback_metrics["low_vs_ema20_4h"],
+        low_vs_ema50_4h=pullback_metrics["low_vs_ema50_4h"],
+        pullback_bars_4h=pullback_metrics["pullback_bars_4h"],
+        pullback_structure_payload=pullback_metrics["payload"],
     )
 
 
 def build_indicator_contexts(symbol_data: dict[str, SymbolMarketData]) -> dict[str, IndicatorContext]:
     contexts = {
-        symbol.upper(): build_indicator_context(symbol, data.klines, data.open_interest)
+        symbol.upper(): build_indicator_context(symbol, data.klines, data.open_interest, getattr(data, "klines_4h", None))
         for symbol, data in symbol_data.items()
     }
     returns_5m = {

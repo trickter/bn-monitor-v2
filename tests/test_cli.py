@@ -21,8 +21,8 @@ def test_run_once_executes_one_monitor_cycle(monkeypatch, tmp_path: Path) -> Non
     def fake_session_scope(session_factory):
         yield "session"
 
-    def fake_run_live_smoke(settings_arg, session, symbols, send_discord=True):
-        calls.append((settings_arg, session, symbols, send_discord))
+    def fake_run_live_smoke(settings_arg, session, symbols, binance_client=None, send_discord=True):
+        calls.append((settings_arg, session, symbols, binance_client, send_discord))
         return {"summary": {"total": 0, "by_type": {}, "by_severity": {}}}
 
     monkeypatch.setattr(cli, "load_settings", lambda: settings)
@@ -34,7 +34,10 @@ def test_run_once_executes_one_monitor_cycle(monkeypatch, tmp_path: Path) -> Non
     result = cli.main(["run", "--once", "--no-discord"])
 
     assert result == 0
-    assert calls == [(settings, "session", ("SOLUSDT", "BNBUSDT"), False)]
+    assert len(calls) == 1
+    assert calls[0][:3] == (settings, "session", ("SOLUSDT", "BNBUSDT"))
+    assert calls[0][3] is not None
+    assert calls[0][4] is False
 
 
 def test_run_requires_symbols_when_top_usdt_discovery_is_not_implemented(monkeypatch, tmp_path: Path) -> None:

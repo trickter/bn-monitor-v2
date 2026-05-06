@@ -23,6 +23,15 @@ REQUIRED_FIELDS_WHEN_READY = {
     "taker_buy_ratio_5m",
     "taker_sell_ratio_5m",
     "market_relative_return_5m",
+    "return_7d",
+    "range_position_7d",
+    "last_up_leg_return",
+    "pullback_from_high",
+    "pullback_retrace_ratio",
+    "low_vs_ema20_4h",
+    "low_vs_ema50_4h",
+    "pullback_bars_4h",
+    "pullback_structure_payload",
 }
 
 
@@ -70,10 +79,37 @@ def synthetic_open_interest(symbol: str = "ALTUSDT") -> list[dict]:
     ]
 
 
+def synthetic_klines_4h(symbol: str = "ALTUSDT") -> list[dict]:
+    start = datetime(2026, 4, 22, tzinfo=UTC)
+    rows = []
+    for i in range(60):
+        rows.append(
+            {
+                "ts": start + timedelta(hours=i * 4),
+                "symbol": symbol,
+                "open": Decimal("100"),
+                "high": Decimal("105"),
+                "low": Decimal("96"),
+                "close": Decimal("100"),
+                "base_volume": Decimal("10"),
+                "quote_volume": Decimal("1000"),
+                "trade_count": 10,
+                "taker_buy_base_volume": Decimal("5"),
+                "taker_buy_quote_volume": Decimal("500"),
+                "close_time": start + timedelta(hours=(i + 1) * 4) - timedelta(milliseconds=1),
+            }
+        )
+    rows[0]["low"] = Decimal("90")
+    rows[50]["high"] = Decimal("120")
+    rows[50]["close"] = Decimal("118")
+    return rows
+
+
 def symbol_data(symbol: str, return_5m: Decimal) -> SimpleNamespace:
     return SimpleNamespace(
         klines=synthetic_klines(symbol, return_5m),
         open_interest=synthetic_open_interest(symbol),
+        klines_4h=synthetic_klines_4h(symbol),
     )
 
 
@@ -81,7 +117,7 @@ def test_build_indicator_context_fills_per_symbol_fields() -> None:
     klines = synthetic_klines(return_5m=Decimal("0.02"))
     open_interest = synthetic_open_interest()
 
-    context = build_indicator_context("ALTUSDT", klines, open_interest)
+    context = build_indicator_context("ALTUSDT", klines, open_interest, synthetic_klines_4h())
 
     assert context.baseline_ready is True
     assert context.is_altcoin is True
@@ -97,6 +133,8 @@ def test_build_indicator_context_fills_per_symbol_fields() -> None:
     assert context.volume_robust_z_5m is not None
     assert context.taker_buy_ratio_5m == Decimal("0.65")
     assert context.taker_sell_ratio_5m == Decimal("0.35")
+    assert context.return_7d is not None
+    assert context.pullback_structure_payload is not None
 
 
 def test_daily_metrics_prefer_completed_utc_day_boundaries() -> None:
