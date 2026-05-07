@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from monitor.models import Alert, AlertCooldown, FuturesKline1m, FuturesOpenInterest, Symbol
@@ -92,6 +92,27 @@ def build_insert_alert_once_statement(values: Mapping[str, Any]):
 
 def insert_alert_once(session: Session, values: Mapping[str, Any]) -> None:
     session.execute(build_insert_alert_once_statement(values))
+
+
+def build_update_alert_delivery_statement(values: Mapping[str, Any]):
+    return (
+        update(Alert)
+        .where(
+            Alert.ts == values["ts"],
+            Alert.symbol == values["symbol"],
+            Alert.alert_type == values["alert_type"],
+            Alert.mode == values["mode"],
+        )
+        .values(
+            delivery_status=values["delivery_status"],
+            discord_sent_at=values.get("discord_sent_at"),
+            payload=values["payload"],
+        )
+    )
+
+
+def update_alert_delivery(session: Session, values: Mapping[str, Any]) -> None:
+    session.execute(build_update_alert_delivery_statement(values))
 
 
 def get_alert_cooldown(session: Session, key: str) -> AlertCooldown | None:

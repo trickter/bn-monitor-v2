@@ -9,7 +9,9 @@ from monitor.config import Settings
 
 
 class DiscordDeliveryError(RuntimeError):
-    pass
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def send_discord_message(settings: Settings, content: str, client: httpx.Client | None = None) -> None:
@@ -19,9 +21,12 @@ def send_discord_message(settings: Settings, content: str, client: httpx.Client 
     resolved_client = client or httpx.Client(timeout=20)
     response = resolved_client.post(settings.discord_webhook_url, json={"content": content})
     if response.status_code == 429:
-        raise DiscordDeliveryError(f"Discord rate limited request: {response.text}")
+        raise DiscordDeliveryError(f"Discord rate limited request: {response.text}", status_code=response.status_code)
     if response.status_code >= 400:
-        raise DiscordDeliveryError(f"Discord webhook failed with status {response.status_code}: {response.text}")
+        raise DiscordDeliveryError(
+            f"Discord webhook failed with status {response.status_code}: {response.text}",
+            status_code=response.status_code,
+        )
 
 
 def format_alert_message(alert: Mapping[str, Any]) -> str:

@@ -10,9 +10,12 @@ from monitor.app import (
     COOLDOWN_SUPPRESSED_REASON,
     DAILY_FLAT_OI_WINDOW_SUPPRESSED_REASON,
     apply_delivery_cooldown,
+    deliver_pending_alert,
     generate_and_persist_alerts,
+    record_delivery_cooldown,
 )
 from monitor.config import Settings
+from monitor.discord import DiscordDeliveryError
 
 
 class FakeSession:
@@ -103,6 +106,10 @@ def test_daily_flat_oi_delivery_cooldown_records_when_not_active(monkeypatch, tm
     apply_delivery_cooldown(settings, FakeSession(), values)
 
     assert values["delivery_status"] == "pending"
+    assert upserts == []
+
+    record_delivery_cooldown(FakeSession(), values)
+
     assert upserts == [
         {
             "key": "live:SOLUSDT:daily_flat_oi_buildup:discord",
@@ -127,6 +134,10 @@ def test_daily_flat_oi_delivery_does_not_drift_after_late_previous_day_send(monk
     apply_delivery_cooldown(settings, FakeSession(), values)
 
     assert values["delivery_status"] == "pending"
+    assert upserts == []
+
+    record_delivery_cooldown(FakeSession(), values)
+
     assert upserts[0]["last_sent_at"] == datetime(2026, 5, 4, 0, 0, tzinfo=UTC)
 
 
@@ -143,3 +154,58 @@ def test_daily_flat_oi_delivery_is_suppressed_outside_utc_zero_hour(monkeypatch,
     assert values["payload"]["suppressed_reason"] == DAILY_FLAT_OI_WINDOW_SUPPRESSED_REASON
     assert values["payload"]["delivery_utc_hour"] == 0
     assert upserts == []
+
+
+def test_deliver_pending_alert_marks_sent_and_records_cooldown(monkeypatch, tmp_path: Path) -> None:
+    settings = settings_from_text(tmp_path, "ALERT_MODE=live\nDISCORD_WEBHOOK_URL=https://discord.example/webhook\n")
+    values = alert_values(datetime(2026, 5, 3, 0, 10, tzinfo=UTC))
+    sent = []
+    upserts = []
+    updates = []
+    monkeypatch.setattr("monitor.app.send_discord_message", lambda settings_arg, content: sent.append(content))
+    monkeypatch.setattr("monitor.app.upsert_alert_cooldown", lambda session, row: upserts.append(row))
+    monkeypatch.setattr("monitor.app.update_alert_delivery", lambda session, row: updates.append(row.copy()))
+
+    deliver_pending_alert(settings, FakeSession(), values)
+
+    assert sent
+    assert values["delivery_status"] == "sent"
+    assert values["discord_sent_at"].tzinfo == UTC
+    assert upserts[0]["key"] == "live:SOLUSDT:daily_flat_oi_buildup:discord"
+    assert updates[0]["delivery_status"] == "sent"
+
+
+def test_deliver_pending_alert_marks_rate_limited_without_raising(monkeypatch, tmp_path: Path) -> None:
+    settings = settings_from_text(tmp_path, "ALERT_MODE=live\nDISCORD_WEBHOOK_URL=https://discord.example/webhook\n")
+    values = alert_values(datetime(2026, 5, 3, 0, 10, tzinfo=UTC))
+    updates = []
+
+    def raise_rate_limited(settings_arg, content):
+        raise DiscordDeliveryError("Discord rate limited request", status_code=429)
+
+    monkeypatch.setattr("monitor.app.send_discord_message", raise_rate_limited)
+    monkeypatch.setattr("monitor.app.update_alert_delivery", lambda session, row: updates.append(row.copy()))
+
+    deliver_pending_alert(settings, FakeSession(), values)
+
+    assert values["delivery_status"] == "rate_limited"
+    assert values["payload"]["delivery_error"] == "Discord rate limited request"
+    assert updates[0]["delivery_status"] == "rate_limited"
+
+
+def test_deliver_pending_alert_marks_failed_without_raising(monkeypatch, tmp_path: Path) -> None:
+    settings = settings_from_text(tmp_path, "ALERT_MODE=live\nDISCORD_WEBHOOK_URL=https://discord.example/webhook\n")
+    values = alert_values(datetime(2026, 5, 3, 0, 10, tzinfo=UTC))
+    updates = []
+
+    def raise_failed(settings_arg, content):
+        raise DiscordDeliveryError("Discord webhook failed", status_code=500)
+
+    monkeypatch.setattr("monitor.app.send_discord_message", raise_failed)
+    monkeypatch.setattr("monitor.app.update_alert_delivery", lambda session, row: updates.append(row.copy()))
+
+    deliver_pending_alert(settings, FakeSession(), values)
+
+    assert values["delivery_status"] == "failed"
+    assert values["payload"]["delivery_error"] == "Discord webhook failed"
+    assert updates[0]["delivery_status"] == "failed"

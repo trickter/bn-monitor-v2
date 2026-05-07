@@ -76,6 +76,8 @@ The runner:
 6. Persists alerts and sends Discord messages only when delivery checks pass.
 7. Sleeps for `MONITOR_POLL_INTERVAL_SECONDS`, then repeats.
 
+REST polling filters out the latest unfinished 1m kline before persistence and alert evaluation. Only rows whose Binance REST close time is not in the future are written to `futures_kline_1m`.
+
 For a single operational check:
 
 ```bash

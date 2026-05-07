@@ -7,11 +7,13 @@ from sqlalchemy.dialects import postgresql
 
 from monitor.repository import (
     build_insert_alert_once_statement,
+    build_update_alert_delivery_statement,
     build_upsert_alert_cooldown_statement,
     build_upsert_kline_1m_statement,
     build_upsert_open_interest_statement,
     build_upsert_symbol_statement,
     insert_alert_once,
+    update_alert_delivery,
     upsert_alert_cooldown,
     upsert_kline_1m,
     upsert_open_interest,
@@ -131,6 +133,21 @@ def test_alert_insert_is_idempotent_do_nothing() -> None:
     assert "DO UPDATE" not in sql
 
 
+def test_alert_delivery_update_uses_source_signal_key() -> None:
+    values = alert_values()
+    values["delivery_status"] = "sent"
+    values["discord_sent_at"] = datetime(2026, 5, 3, 1, 3, tzinfo=timezone.utc)
+    sql = compile_sql(build_update_alert_delivery_statement(values))
+
+    assert "UPDATE alerts SET payload=" in sql
+    assert "delivery_status=" in sql
+    assert "discord_sent_at=" in sql
+    assert "WHERE alerts.ts =" in sql
+    assert "alerts.symbol =" in sql
+    assert "alerts.alert_type =" in sql
+    assert "alerts.mode =" in sql
+
+
 def test_alert_cooldown_upsert_uses_key_conflict_target() -> None:
     sql = compile_sql(build_upsert_alert_cooldown_statement(alert_cooldown_values()))
 
@@ -153,6 +170,7 @@ def test_repository_functions_execute_statements() -> None:
     upsert_kline_1m(session, kline_values())
     upsert_open_interest(session, open_interest_values())
     insert_alert_once(session, alert_values())
+    update_alert_delivery(session, alert_values())
     upsert_alert_cooldown(session, alert_cooldown_values())
 
-    assert len(session.executed) == 5
+    assert len(session.executed) == 6

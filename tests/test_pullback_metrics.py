@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from monitor.binance.rest import _closed_klines_4h, _ema_with_seed, _trend_pullback_metrics
+from monitor.binance.rest import _closed_klines_4h, _closed_rest_klines, _ema_with_seed, _kline_repository_values, _trend_pullback_metrics
 
 
 def kline_4h(
@@ -72,3 +72,13 @@ def test_closed_klines_4h_filters_unfinished_candle() -> None:
     closed = _closed_klines_4h(rows, latest_1m_ts)
 
     assert [row["ts"] for row in closed] == [rows[0]["ts"], rows[1]["ts"]]
+
+
+def test_closed_rest_klines_filters_unfinished_rows_and_strips_close_time() -> None:
+    first = kline_4h(0)
+    second = kline_4h(1)
+
+    closed = _closed_rest_klines([first, second], first["close_time"] + timedelta(seconds=1))
+
+    assert closed == [first]
+    assert "close_time" not in _kline_repository_values(closed[0])

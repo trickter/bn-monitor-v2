@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import UTC
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -9,8 +9,15 @@ from monitor.alerts.engine import AlertEngine
 from monitor.indicators import IndicatorContext
 from monitor.binance.rest import BinanceRestClient, build_indicator_contexts
 from monitor.config import Settings
-from monitor.discord import format_alert_message, send_discord_message
-from monitor.repository import get_alert_cooldown, insert_alert_once, upsert_alert_cooldown, upsert_kline_1m, upsert_open_interest
+from monitor.discord import DiscordDeliveryError, format_alert_message, send_discord_message
+from monitor.repository import (
+    get_alert_cooldown,
+    insert_alert_once,
+    update_alert_delivery,
+    upsert_alert_cooldown,
+    upsert_kline_1m,
+    upsert_open_interest,
+)
 from monitor.reports import summarize_alert_projection
 
 
@@ -65,6 +72,12 @@ def apply_delivery_cooldown(settings: Settings, session: Session, values: dict) 
         values["payload"]["cooldown_utc_date"] = values["ts"].astimezone(UTC).date().isoformat()
         return
 
+
+def record_delivery_cooldown(session: Session, values: dict) -> None:
+    if values["alert_type"] != "daily_flat_oi_buildup":
+        return
+
+    key = _delivery_cooldown_key(values)
     upsert_alert_cooldown(
         session,
         {
@@ -75,6 +88,26 @@ def apply_delivery_cooldown(settings: Settings, session: Session, values: dict) 
             "updated_at": values["ts"],
         },
     )
+
+
+def deliver_pending_alert(settings: Settings, session: Session, values: dict) -> None:
+    if values["delivery_status"] != "pending":
+        return
+
+    try:
+        send_discord_message(settings, format_alert_message(values))
+    except DiscordDeliveryError as exc:
+        values["delivery_status"] = "rate_limited" if exc.status_code == 429 else "failed"
+        values["payload"]["delivery_error"] = str(exc)
+    except Exception as exc:
+        values["delivery_status"] = "failed"
+        values["payload"]["delivery_error"] = str(exc)
+    else:
+        record_delivery_cooldown(session, values)
+        values["delivery_status"] = "sent"
+        values["discord_sent_at"] = datetime.now(UTC)
+
+    update_alert_delivery(session, values)
 
 
 def run_live_smoke(
@@ -102,7 +135,7 @@ def run_live_smoke(
             apply_delivery_cooldown(settings, session, values)
         insert_alert_once(session, values)
         if send_discord and values["delivery_status"] == "pending":
-            send_discord_message(settings, format_alert_message(values))
+            deliver_pending_alert(settings, session, values)
 
     return {
         "symbols": [symbol.upper() for symbol in symbols],

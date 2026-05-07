@@ -45,7 +45,9 @@ class BinanceRestClient:
         rows = response.json()
         if not isinstance(rows, list):
             raise BinanceRestError("unexpected kline response")
-        return [parse_rest_kline(symbol, row) for row in rows]
+        parsed = [parse_rest_kline(symbol, row) for row in rows]
+        closed = _closed_rest_klines(parsed, datetime.now(UTC))
+        return [_kline_repository_values(row) for row in closed]
 
     def fetch_klines_4h(self, symbol: str, limit: int = 80) -> list[dict[str, Any]]:
         response = self.client.get("/fapi/v1/klines", params={"symbol": symbol.upper(), "interval": "4h", "limit": limit})
@@ -101,6 +103,7 @@ def parse_rest_kline(symbol: str, row: list[Any]) -> dict[str, Any]:
         raise BinanceRestError("kline row has too few fields")
     return {
         "ts": ms_to_utc(int(row[0])),
+        "close_time": ms_to_utc(int(row[6])),
         "symbol": symbol.upper(),
         "open": decimal_from(row[1]),
         "high": decimal_from(row[2]),
@@ -112,6 +115,14 @@ def parse_rest_kline(symbol: str, row: list[Any]) -> dict[str, Any]:
         "taker_buy_base_volume": decimal_from(row[9]),
         "taker_buy_quote_volume": decimal_from(row[10]),
     }
+
+
+def _closed_rest_klines(klines: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
+    return [row for row in klines if row.get("close_time") is not None and row["close_time"] <= now]
+
+
+def _kline_repository_values(kline: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in kline.items() if key != "close_time"}
 
 
 def _closed_klines_4h(klines_4h: list[dict[str, Any]], latest_1m_ts: datetime) -> list[dict[str, Any]]:
